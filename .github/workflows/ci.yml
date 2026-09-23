@@ -1,0 +1,26 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  core:
+    strategy:
+      matrix: { os: [windows-latest, ubuntu-latest, macos-latest] }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: npm ci
+      - run: npm run verify
+      - if: runner.os == 'Windows'
+        run: npm.cmd run native:build
+      - if: runner.os == 'Windows'
+        run: npm.cmd run test:windows-native
+  linux-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: npm ci
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap strace
+      - run: npm run test:security

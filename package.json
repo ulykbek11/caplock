@@ -1,0 +1,31 @@
+{
+  "name": "caplock-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "caplock": "./dist/cli.js", "caplock-shell": "./dist/shell.js" },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsx src/cli.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run test/integration",
+    "test:security": "vitest run test/security test/integration",
+    "test:windows-native": "powershell -NoProfile -Command \"$env:CAPLOCK_RUN_WINDOWS_SECURITY='1'; npx.cmd vitest run test/integration/windows-sandbox.test.ts\"",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "demo": "tsx examples/demo/run-demo.ts",
+    "benchmark": "node scripts/benchmark.mjs",
+    "verify": "node scripts/verify.mjs",
+    "verify:linux": "bash scripts/verify-linux.sh",
+    "verify:windows": "npm.cmd run lint && npm.cmd run typecheck && npm.cmd run build && npm.cmd run native:build && npm.cmd test && npm.cmd run test:windows-native && npm.cmd run test:security",
+    "verify:macos": "npm run verify && npm run test:security",
+    "native:build": "powershell -ExecutionPolicy Bypass -File scripts/build-native.ps1",
+    "native:diagnostic:build": "powershell -ExecutionPolicy Bypass -File scripts/build-appcontainer-diagnostic.ps1",
+    "native:diagnostic:run": "powershell -ExecutionPolicy Bypass -File scripts/run-appcontainer-diagnostic.ps1",
+    "native:diagnostic": "npm.cmd run native:diagnostic:build && npm.cmd run native:diagnostic:run"
+  },
+  "engines": { "node": ">=24" },
+  "dependencies": { "commander": "^14.0.0", "picocolors": "^1.1.1", "yaml": "^2.8.1", "zod": "^4.1.5" },
+  "devDependencies": { "@eslint/js": "^9.35.0", "@types/node": "^24.3.1", "eslint": "^9.35.0", "prettier": "^3.6.2", "tsup": "^8.5.0", "tsx": "^4.20.5", "typescript": "^5.9.2", "typescript-eslint": "^8.42.0", "vitest": "^3.2.4" }
+}
