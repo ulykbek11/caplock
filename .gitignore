@@ -3,3 +3,5 @@ dist/
 .caplock/
 coverage/
 *.trace
+*.obj
+native/bin/appcontainer-diagnostic.exe

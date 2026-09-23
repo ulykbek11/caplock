@@ -12,7 +12,7 @@ CapLock is a local-first CLI for running reviewed npm dependency lifecycle scrip
 | Platform | Backend | Status |
 | --- | --- | --- |
 | Linux | Bubblewrap | native backend; active verification required by `doctor` |
-| Windows 10/11 | classic AppContainer + Job Object | native helper and production self-test; full security contract remains verification-gated |
+| Windows 10/11 x64 | classic AppContainer + Job Object | native helper and production self-test; full security contract remains verification-gated |
 | macOS | Seatbelt (`sandbox-exec`) | native profile generation; full security contract remains verification-gated |
 
 CapLock never substitutes an unrestricted process when a native backend is unavailable or its required verification fails.

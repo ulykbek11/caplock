@@ -2,7 +2,7 @@ export type NetworkMode = "none" | "host";
 export interface PackageIdentity { name: string; version: string; packageDir: string; packageJsonPath: string; integrity?: string }
 export interface Lifecycle { event: "preinstall" | "install" | "postinstall"; command: string; hash: string }
 export interface Policy { filesystem?: { read?: string[]; write?: string[] }; env?: { allow?: string[] }; network?: NetworkMode }
-export interface LockEntry { package: { name: string; version: string; integrity?: string }; lifecycle: Lifecycle; policy: Required<Policy>; observed?: { executables: string[]; networkAttempted: boolean } }
+export interface LockEntry { package: { name: string; version: string; integrity?: string }; lifecycle: Lifecycle; policy: Required<Policy> }
 export interface Lockfile { version: 1; packages: LockEntry[] }
 
 /** Platform-neutral input passed to an OS enforcement backend. */

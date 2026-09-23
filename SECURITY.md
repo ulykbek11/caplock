@@ -6,4 +6,4 @@ These properties are security claims only when the active backend contract passe
 
 It does not protect against kernel or sandbox vulnerabilities, root users, sandbox escapes, malicious native kernel exploits, every persistence technique, root-project scripts, or domain-level network policy. `network: host` deliberately gives the package normal host networking; it is not domain-filtered.
 
-Report vulnerabilities privately to the maintainers before opening a public issue.
+Report vulnerabilities privately through [GitHub Private Vulnerability Reporting](https://github.com/ulykbek11/caplock/security/advisories/new). Do not include secrets or exploit details in public issues.

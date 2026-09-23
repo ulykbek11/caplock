@@ -4,7 +4,7 @@ import path from "node:path";
 import { readLockfile, findLock } from "./lockfile.js";
 import { readConfig } from "./config.js";
 import { identifyPackage, lifecycleFromEnv } from "./package.js";
-import { defaultPolicy } from "./policy.js";
+import { defaultPolicy, validatePolicy } from "./policy.js";
 import { selectSandboxBackend } from "./sandbox/backend.js";
 import type { LockEntry } from "./types.js";
 
@@ -30,7 +30,10 @@ async function main(): Promise<void> {
   if (!approved || approved.lifecycle.hash !== lifecycle.hash) { console.error(`CapLock requires review: ${identity.name}@${identity.version} ${lifecycle.event} is not approved or its command changed.`); process.exitCode = 1; return; }
   const shell = process.platform === "win32" ? (process.env.ComSpec ?? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "cmd.exe")) : "/bin/sh";
   const shellArgs = process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command];
-  const result = await selectSandboxBackend().run({ executable: shell, args: shellArgs }, approved.policy, { projectRoot: root, identity, traceFile: process.env.CAPLOCK_TRACE_FILE, timeoutMs: readConfig(root).execution.timeoutSeconds * 1000 });
+  // The lockfile is user-editable input. Validate it in the trusted parent on
+  // every invocation, before any lifecycle command reaches a backend.
+  const policy = validatePolicy(approved.policy, root, identity.packageDir);
+  const result = await selectSandboxBackend().run({ executable: shell, args: shellArgs }, policy, { projectRoot: root, identity, traceFile: process.env.CAPLOCK_TRACE_FILE, timeoutMs: readConfig(root).execution.timeoutSeconds * 1000 });
   process.exitCode = result.code;
 }
 main().catch((error: unknown) => { console.error(process.env.CAPLOCK_DEBUG ? error : `CapLock shell failed: ${error instanceof Error ? error.message : String(error)}`); process.exitCode = 1; });

@@ -14,6 +14,7 @@ function helperPath(): string { return path.resolve(path.dirname(fileURLToPath(i
 export class WindowsSandboxBackend implements SandboxBackend {
   readonly id = "windows-native"; readonly platform = "win32" as const;
   async checkAvailability(): Promise<SandboxAvailability> {
+    if (process.arch !== "x64") return { available: false, detail: `Windows ${process.arch} is unsupported: CapLock v1 ships an x64 AppContainer helper.`, capabilities };
     const available = existsSync(helperPath());
     return { available, detail: available ? "native AppContainer helper available" : "Native helper is missing. Run npm run native:build from a Visual Studio developer prompt.", capabilities };
   }
