@@ -1,11 +1,14 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../../src/process.js";
+import { defaultPolicy } from "../../src/policy.js";
+import { WindowsSandboxBackend } from "../../src/sandbox/windows.js";
 
 /* This suite deliberately invokes the shipped native executable. It is enabled
  * by verify:windows / test:windows-native rather than being simulated on other OSes. */
-const enabled = process.platform === "win32" && process.env.CAPLOCK_RUN_WINDOWS_SECURITY === "1";
+const enabled = process.platform === "win32";
 const suite = enabled ? describe : describe.skip;
 const helper = path.resolve("native/bin/caplock-sandbox.exe");
 
@@ -20,6 +23,18 @@ suite("Windows AppContainer production helper", () => {
     const result = await run(helper, ["--selftest"], { timeoutMs: 30_000 });
     expect(result.code, result.stderr).toBe(0);
     const probe = JSON.parse(result.stdout.trim()) as Record<string, boolean>;
-    expect(probe).toEqual({ profileCreated: true, processLaunched: true, tokenIsAppContainer: true, allowedWrite: true, cleanup: true });
+    expect(probe).toMatchObject({ profileCreated: true, processLaunched: true, tokenIsAppContainer: true, allowedWrite: true, cleanup: true, stage: "complete" });
   });
+
+  it("runs an absolute Node executable inside the production AppContainer backend", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "caplock-windows-node-"));
+    const packageDir = path.join(root, "node_modules", "fixture");
+    try {
+      mkdirSync(packageDir, { recursive: true });
+      writeFileSync(path.join(packageDir, "package.json"), '{"name":"fixture","version":"1.0.0"}');
+      const result = await new WindowsSandboxBackend().run({ executable: process.execPath, args: ["-e", "require('fs').writeFileSync('backend-node-marker','ok')"] }, defaultPolicy(), { projectRoot: root, identity: { name: "fixture", version: "1.0.0", packageDir, packageJsonPath: path.join(packageDir, "package.json") }, controlEnv: process.env, childEnv: { ...process.env, CAPLOCK_TEST_SECRET: "not-visible" }, timeoutMs: 30_000 });
+      expect(result.code, result.stderr).toBe(0);
+      expect(readFileSync(path.join(packageDir, "backend-node-marker"), "utf8")).toBe("ok");
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 45_000);
 });

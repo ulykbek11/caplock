@@ -1,7 +1,10 @@
 node_modules/
 dist/
 .caplock/
+.caplock-debug/
 coverage/
 *.trace
 *.obj
 native/bin/appcontainer-diagnostic.exe
+*.obj
+appcontainer-diagnostic.exe

@@ -13,7 +13,12 @@ export function validatePolicy(input: unknown, projectRoot: string, packageDir: 
   for (const [kind, values] of [["read", p.filesystem?.read ?? []], ["write", p.filesystem?.write ?? []]] as const) {
     filesystem[kind] = values.map((v) => validatePolicyPath(v, projectRoot, packageDir));
   }
-  out.env!.allow = (p.env?.allow ?? out.env!.allow ?? []).filter((name) => !SECRET_ENV.test(name));
+  const names = p.env?.allow ?? out.env!.allow ?? [];
+  for (const name of names) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new Error(`Invalid environment variable name in policy: ${name}`);
+    if (SECRET_ENV.test(name)) throw new Error(`Sensitive environment variable cannot be allowed: ${name}`);
+  }
+  out.env!.allow = names;
   out.network = (p.network ?? "none") as NetworkMode; return out;
 }
 export function validatePolicyPath(value: string, projectRoot: string, packageDir: string): string {
@@ -33,7 +38,10 @@ export function substitutePolicyPath(value: string, projectRoot: string, package
 }
 export function isSensitiveProjectPath(relative: string): boolean { return relative.split("/").some((part) => forbidden.includes(part) || part.startsWith(".env.")); }
 export function filterEnvironment(env: NodeJS.ProcessEnv, allowed: string[]): Record<string, string> {
-  const result: Record<string, string> = { HOME: "/home/caplock", PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", TMPDIR: "/tmp" };
-  for (const [key, value] of Object.entries(env)) if (value && !SECRET_ENV.test(key) && (allowed.includes(key) || key.startsWith("npm_") || key.startsWith("NODE_"))) result[key] = value;
+  const result: Record<string, string> = { HOME: "/home/caplock", PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", TMPDIR: "/tmp", TMP: "/tmp" };
+  // These locations are CapLock-controlled regardless of a policy allowlist.
+  // Carrying a host HOME/TEMP back into the child would defeat isolation.
+  const synthetic = new Set(["HOME", "PATH", "TMP", "TMPDIR", "USERPROFILE", "HOMEDRIVE", "HOMEPATH"]);
+  for (const [key, value] of Object.entries(env)) if (value && !synthetic.has(key.toUpperCase()) && !SECRET_ENV.test(key) && (allowed.includes(key) || key.startsWith("npm_") || key.startsWith("NODE_"))) result[key] = value;
   return result;
 }

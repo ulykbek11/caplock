@@ -12,3 +12,15 @@ export function selectSandboxBackend(platform: NodeJS.Platform = process.platfor
     default: throw new Error(`CapLock does not support ${platform}; lifecycle scripts will not be run.`);
   }
 }
+
+/** Cheap fail-closed gate for every lifecycle. Full doctor probes remain an
+ * explicit release verification step, rather than an expensive install step. */
+export async function preflightSandbox(policy: Required<import("../types.js").Policy>): Promise<void> {
+  const backend = selectSandboxBackend();
+  const availability = await backend.checkAvailability();
+  if (!availability.available) throw new Error(`CapLock sandbox preflight failed: ${availability.detail}`);
+  const c = availability.capabilities;
+  if (!c.filesystemIsolation || !c.environmentIsolation || !c.processContainment || (policy.network === "none" && !c.networkIsolation)) {
+    throw new Error("CapLock sandbox preflight failed: required security properties are unavailable.");
+  }
+}

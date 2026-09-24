@@ -1,7 +1,8 @@
 $ErrorActionPreference = 'Stop'
 $source = Join-Path $PSScriptRoot '..\native\windows\appcontainer-diagnostic.c'
 $output = Join-Path $PSScriptRoot '..\native\bin\appcontainer-diagnostic.exe'
-$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+$programFilesX86 = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86)
+$vswhere = Join-Path $programFilesX86 'Microsoft Visual Studio\Installer\vswhere.exe'
 if (-not (Test-Path -LiteralPath $vswhere)) { throw 'Visual Studio Build Tools were not found.' }
 $installation = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
 $vcvarsall = Join-Path $installation.Trim() 'VC\Auxiliary\Build\vcvarsall.bat'

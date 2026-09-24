@@ -7,7 +7,9 @@ export interface Lockfile { version: 1; packages: LockEntry[] }
 
 /** Platform-neutral input passed to an OS enforcement backend. */
 export interface SandboxCommand { executable: string; args: string[]; cwd?: string }
-export interface SandboxContext { projectRoot: string; identity: PackageIdentity; traceFile?: string; timeoutMs?: number }
+/** controlEnv is visible to trusted backend helpers; childEnv is the input to
+ * lifecycle sanitization and must never be used to launch a trusted helper. */
+export interface SandboxContext { projectRoot: string; identity: PackageIdentity; traceFile?: string; timeoutMs?: number; controlEnv?: NodeJS.ProcessEnv; childEnv?: NodeJS.ProcessEnv }
 export interface SandboxCapabilities {
   filesystemIsolation: boolean; environmentIsolation: boolean; networkIsolation: boolean;
   processContainment: boolean; processObservation: boolean;

@@ -33,13 +33,13 @@ Linux users also install `bubblewrap` and `strace` (for example, `sudo apt-get i
 
 ## How it works
 
-`caplock install` first invokes `npm install --ignore-scripts`. It then proves npm's `script-shell` interception with a harmless canary. Only then does `npm rebuild` run, with each approved dependency lifecycle command dispatched through Bubblewrap.
+`caplock install` first invokes the selected npm or pnpm manager with `--ignore-scripts`. It then proves lifecycle shell interception with a harmless canary. Only then does rebuild run, with each approved dependency lifecycle command dispatched through the platform-native backend: AppContainer on Windows, Bubblewrap on Linux, or Seatbelt on macOS.
 
 The intended default is a writable package and sandbox temp directory, a synthetic empty HOME, filtered environment, and no network. `caplock doctor` is the authority for whether that contract is actively verified on the current machine; do not treat an unverified platform as protected.
 
 ## Threat model and limits
 
-See [SECURITY.md](SECURITY.md). CapLock reduces the authority given to dependency lifecycle scripts; it does not guarantee containment against kernel or Bubblewrap vulnerabilities.
+See [SECURITY.md](SECURITY.md). CapLock reduces the authority given to dependency lifecycle scripts; it does not guarantee containment against kernel or OS-sandbox vulnerabilities.
 
 ## Commands
 

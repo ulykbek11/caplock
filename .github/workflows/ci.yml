@@ -1,26 +1,35 @@
-name: CI
+name: release-contract
 on: [push, pull_request]
 jobs:
-  core:
-    strategy:
-      matrix: { os: [windows-latest, ubuntu-latest, macos-latest] }
+  release:
+    name: ${{ matrix.os }} / ${{ matrix.manager }}
     runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        manager: [npm, pnpm]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
+      - run: corepack enable
+      - run: corepack prepare pnpm@10.17.1 --activate
       - run: npm ci
-      - run: npm run verify
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap strace
       - if: runner.os == 'Windows'
+        shell: pwsh
         run: npm.cmd run native:build
       - if: runner.os == 'Windows'
-        run: npm.cmd run test:windows-native
-  linux-security:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 24 }
-      - run: npm ci
-      - run: sudo apt-get update && sudo apt-get install -y bubblewrap strace
-      - run: npm run test:security
+        shell: pwsh
+        run: npm.cmd run verify:windows
+      - if: runner.os == 'Linux'
+        run: npm run verify:linux
+      - if: runner.os == 'macOS'
+        run: npm run verify:macos
+      - if: matrix.manager == 'npm'
+        run: npm run test:e2e:npm
+      - if: matrix.manager == 'pnpm'
+        run: npm run test:e2e:pnpm
+      - run: npm run release:check
