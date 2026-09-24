@@ -29,7 +29,7 @@ suite("pnpm lifecycle E2E", () => {
       expect(realpathSync.native(packageDir).startsWith(realpathSync.native(path.join(root, "node_modules"))), "pnpm dependency must resolve inside node_modules").toBe(true);
       const marker = path.join(packageDir, "caplock-lifecycle-marker"); expect(existsSync(marker)).toBe(false);
       expect((await run(process.execPath, [cli, "init"], { cwd: root })).code).toBe(0); expect((await run(process.execPath, [cli, "learn", "--yes"], { cwd: root })).code).toBe(0);
-      const installed = await run(process.execPath, [cli, "install"], { cwd: root, env: npmEnv, timeoutMs: 90_000 }); expect(installed.code, `${installed.stdout}\n${installed.stderr}`).toBe(0);
+      const installed = await run(process.execPath, [cli, "install"], { cwd: root, env: process.platform === "win32" ? npmEnv : { ...npmEnv, CAPLOCK_DEBUG: "1" }, timeoutMs: 90_000 }); expect(installed.code, `${installed.stdout}\n${installed.stderr}`).toBe(0);
       expect(readFileSync(marker, "utf8")).toBe("intercepted");
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 120_000);

@@ -8,7 +8,7 @@ describe("production Bubblewrap arguments", () => {
     const invocation = buildLinuxInvocation({ executable: "/bin/sh", args: ["-c", "echo ok"] }, defaultPolicy(), context);
     expect(invocation.executable).toBe("bwrap");
     expect(invocation.args.slice(0, 5)).toEqual(["--die-with-parent", "--new-session", "--unshare-pid", "--unshare-ipc", "--unshare-uts"]);
-    expect(invocation.args).toContain("--share-net");
+    expect(invocation.args).not.toContain("--share-net");
     expect(invocation.args).toContain("--seccomp");
     expect(invocation.args).toContain("/home/caplock");
     expect(invocation.args).toContain("--bind");
@@ -20,7 +20,7 @@ describe("production Bubblewrap arguments", () => {
     const invocation = buildLinuxInvocation({ executable: "/bin/sh", args: ["-c", "echo ok"] }, policy, { projectRoot: "/project", identity });
     expect(invocation.executable).toBe("bwrap");
     expect(invocation.args).toContain("--unshare-user");
-    expect(invocation.args).toContain("--share-net");
+    expect(invocation.args).not.toContain("--share-net");
     expect(invocation.args).not.toContain("--unshare-net");
   });
 });

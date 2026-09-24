@@ -17,7 +17,7 @@ suite("macOS Seatbelt production sandbox contract", () => {
       const backend = new MacOSSandboxBackend(); const available = await backend.checkAvailability();
       expect(available.available, available.detail).toBe(true);
       const policy = defaultPolicy(); policy.env!.allow!.push("REAL_HOME");
-      const command = "test \"$HOME\" != \"$REAL_HOME\" || exit 11; test -z \"$CAPLOCK_TEST_SECRET\" || exit 12; test -n \"$TMPDIR\" || exit 13; echo allowed > allowed || exit 14; test ! -r '" + path.join(root, ".env") + "' || exit 15; touch '" + path.join(sibling, "escape") + "' 2>/dev/null && exit 16; exit 0";
+      const command = "echo home-check >&2; test \"$HOME\" != \"$REAL_HOME\" || exit 11; echo secret-check >&2; test -z \"$CAPLOCK_TEST_SECRET\" || exit 12; echo tmp-check >&2; test -n \"$TMPDIR\" || exit 13; echo package-write >&2; echo allowed > allowed || exit 14; echo project-read >&2; test ! -r '" + path.join(root, ".env") + "' || exit 15; echo sibling-write >&2; touch '" + path.join(sibling, "escape") + "' 2>/dev/null && exit 16; exit 0";
       const result = await backend.run({ executable: "/bin/sh", args: ["-c", command] }, policy, { projectRoot: root, identity: { name: "fixture", version: "1.0.0", packageDir: pkg, packageJsonPath: path.join(pkg, "package.json") }, childEnv: { ...process.env, REAL_HOME: root, CAPLOCK_TEST_SECRET: "CAPLOCK_TEST_SECRET_MUST_NOT_LEAK" }, timeoutMs: 15_000 });
       expect(result.code, `Seatbelt contract exit=${result.code}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`).toBe(0);
       expect(existsSync(path.join(pkg, "allowed"))).toBe(true); expect(existsSync(path.join(sibling, "escape"))).toBe(false);
