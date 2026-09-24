@@ -27,7 +27,7 @@ export class MacOSSandboxBackend implements SandboxBackend {
     try {
       const profile = path.join(temp, "probe.sb");
       const systemPaths = ["/usr", "/System", "/bin", "/sbin"];
-      writeFileSync(profile, ["(version 1)", "(deny default)", "(allow process-fork)", `(allow process-exec (literal ${quote("/usr/bin/true")}))`, ...systemPaths.map((p) => `(allow process-exec (subpath ${quote(p)}))`), ...systemPaths.map((p) => `(allow file-read* (subpath ${quote(p)}))`)].join("\n"));
+      writeFileSync(profile, ["(version 1)", "(deny default)", '(import "bsd.sb")', "(allow process-fork)", `(allow process-exec (literal ${quote("/usr/bin/true")}))`, ...systemPaths.map((p) => `(allow process-exec (subpath ${quote(p)}))`), ...systemPaths.map((p) => `(allow file-read* (subpath ${quote(p)}))`)].join("\n"));
       const probe = await run("sandbox-exec", ["-f", profile, "/usr/bin/true"], { timeoutMs: 15_000 });
       const checks: DoctorCheck[] = [{ name: "native macOS backend", ok: probe.code === 0, detail: probe.code === 0 ? "active Seatbelt launch passed" : `Seatbelt launch probe failed (exit=${probe.code}): ${redactText(probe.stderr.trim() || probe.stdout.trim() || "sandbox-exec returned no diagnostic")}` }];
       if (probe.code === 0) {
@@ -64,7 +64,12 @@ export class MacOSSandboxBackend implements SandboxBackend {
     // application data on macOS. The standard executable and library roots
     // below are sufficient for the supported shell/Node invocation.
     const executableRoots = ["/usr", "/System", "/bin", "/sbin"];
-    const lines = ["(version 1)", "(deny default)", "(allow process-fork)", ...executableRoots.map((item) => `(allow process-exec (subpath ${quote(item)}))`), ...executableRoots.map((item) => `(allow file-read* (subpath ${quote(item)}))`)];
+    // Apple's bsd.sb is the narrow runtime baseline needed by ordinary
+    // executables (dyld, shared libraries, and basic kernel queries). Without
+    // it even a permitted /usr/bin/true can exit 1 before user code starts.
+    // It does not grant arbitrary project/home access or networking; those
+    // remain controlled by the explicit rules below and network policy.
+    const lines = ["(version 1)", "(deny default)", '(import "bsd.sb")', "(allow process-fork)", ...executableRoots.map((item) => `(allow process-exec (subpath ${quote(item)}))`), ...executableRoots.map((item) => `(allow file-read* (subpath ${quote(item)}))`)];
     const commandExecutable = path.isAbsolute(command.executable) ? canonicalPath(command.executable) : undefined;
     if (commandExecutable) lines.push(`(allow process-exec (literal ${quote(commandExecutable)}))`);
     for (const item of read) lines.push(`(allow file-read* (subpath ${quote(item)}))`);
