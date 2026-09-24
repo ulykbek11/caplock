@@ -16,6 +16,10 @@ function invoke(args, capture = false) {
     : spawnSync(npm, args, { cwd: root, stdio: capture ? "pipe" : "inherit", encoding: "utf8", shell: false });
   if (result.error || result.status !== 0) {
     const phase = args[0] === "run" ? `npm run ${args[1]}` : `npm ${args.join(" ")}`;
+    if (capture) {
+      if (result.stdout) process.stdout.write(result.stdout);
+      if (result.stderr) process.stderr.write(result.stderr);
+    }
     console.error(`::error::verify:${requested} phase failed: ${phase}; ${result.error?.message ?? `exit=${result.status ?? 1}`}`);
     process.exit(result.status ?? 1);
   }
@@ -23,7 +27,7 @@ function invoke(args, capture = false) {
 }
 for (const name of ["lint", "typecheck", "build"]) invoke(["run", name]);
 if (requested === "windows") invoke(["run", "native:build"]);
-invoke(["run", "test"]);
+invoke(["run", "test"], true);
 invoke(["run", `test:${requested === "windows" ? "windows" : requested}-native`]);
 invoke(["run", "test:security"]);
 invoke(["run", "test:e2e:npm"]);
