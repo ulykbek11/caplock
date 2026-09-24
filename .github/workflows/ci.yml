@@ -17,7 +17,10 @@ jobs:
       - run: corepack prepare pnpm@10.17.1 --activate
       - run: npm ci
       - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap strace
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap strace apparmor-profiles apparmor-utils
+          sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
       - if: runner.os == 'Windows'
         shell: pwsh
         run: npm.cmd run native:build
