@@ -12,8 +12,7 @@ const capabilities: SandboxCapabilities = { filesystemIsolation: true, environme
 
 /** Argument construction used by the production backend and its unit tests. */
 export function buildLinuxArgs(command: SandboxCommand, policy: Required<import("../types.js").Policy>, context: SandboxContext): string[] {
-  const args = ["--die-with-parent", "--new-session", "--unshare-pid", "--unshare-ipc", "--unshare-uts", "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--dir", "/home", "--dir", "/home/caplock"];
-  if (policy.network === "host") args.splice(2, 0, "--unshare-user");
+  const args = ["--die-with-parent", "--new-session", "--unshare-pid", "--unshare-ipc", "--unshare-uts", "--unshare-user", "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--dir", "/home", "--dir", "/home/caplock"];
   for (const item of systemPaths) if (existsSync(item)) args.push("--ro-bind", item, item);
   for (const item of ["package.json", "package-lock.json", "pnpm-lock.yaml", "node_modules"]) { const source = path.join(context.projectRoot, item); if (existsSync(source)) args.push("--ro-bind", source, source); }
   args.push("--bind", context.identity.packageDir, context.identity.packageDir);

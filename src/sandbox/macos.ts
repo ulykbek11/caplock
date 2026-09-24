@@ -68,8 +68,13 @@ export class MacOSSandboxBackend implements SandboxBackend {
     for (const item of command.trustedExecutablePaths ?? []) lines.push(`(allow file-read* (literal ${quote(canonicalPath(item))}))`);
     if (policy.network === "host") lines.push("(allow network*)");
     const profile = path.join(root, "caplock.sb"); writeFileSync(profile, lines.join("\n"), { mode: 0o600 });
+    if (process.env.CAPLOCK_DEBUG === "1") console.error(`CapLock Seatbelt profile (${profile}):\n${lines.join("\n")}`);
     const env = filterEnvironment(context.childEnv ?? context.controlEnv ?? process.env, policy.env?.allow ?? []); Object.assign(env, { HOME: home, TMPDIR: tmp, TMP: tmp });
-    try { return await run("sandbox-exec", ["-f", profile, command.executable, ...command.args], { cwd: canonicalPath(command.cwd ?? context.identity.packageDir), env, timeoutMs: context.timeoutMs }); }
+    try {
+      const result = await run("sandbox-exec", ["-f", profile, command.executable, ...command.args], { cwd: canonicalPath(command.cwd ?? context.identity.packageDir), env, timeoutMs: context.timeoutMs });
+      if (result.code !== 0 && process.env.CAPLOCK_DEBUG === "1") console.error(`CapLock Seatbelt child failed: exit=${result.code}; cwd=${canonicalPath(command.cwd ?? context.identity.packageDir)}; executable=${command.executable}; stderr=${redactText(result.stderr.trim())}`);
+      return result;
+    }
     finally { rmSync(root, { recursive: true, force: true }); }
   }
 }
