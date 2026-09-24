@@ -16,11 +16,13 @@ function invoke(args, capture = false) {
     : spawnSync(npm, args, { cwd: root, stdio: capture ? "pipe" : "inherit", encoding: "utf8", shell: false });
   if (result.error || result.status !== 0) {
     const phase = args[0] === "run" ? `npm run ${args[1]}` : `npm ${args.join(" ")}`;
+    const captured = capture ? `${result.stdout ?? ""}\n${result.stderr ?? ""}` : "";
+    const testSummary = capture ? captured.split(/\r?\n/).filter((line) => /^\s*(?:FAIL\s|AssertionError:|Error:|❯\s|Test Files\s|Tests\s)/u.test(line)).slice(-20).join(" | ") : "";
     if (capture) {
       if (result.stdout) process.stdout.write(result.stdout);
       if (result.stderr) process.stderr.write(result.stderr);
     }
-    console.error(`::error::verify:${requested} phase failed: ${phase}; ${result.error?.message ?? `exit=${result.status ?? 1}`}`);
+    console.error(`::error::verify:${requested} phase failed: ${phase}; ${result.error?.message ?? `exit=${result.status ?? 1}`}${testSummary ? `; ${testSummary}` : ""}`);
     process.exit(result.status ?? 1);
   }
   return result;
