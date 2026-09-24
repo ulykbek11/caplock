@@ -11,8 +11,12 @@ const capabilities: SandboxCapabilities = { filesystemIsolation: true, environme
 
 /** Argument construction used by the production backend and its unit tests. */
 export function buildLinuxArgs(command: SandboxCommand, policy: Required<import("../types.js").Policy>, context: SandboxContext): string[] {
-  const args = ["--die-with-parent", "--new-session", "--unshare-pid", "--unshare-ipc", "--unshare-uts", "--unshare-user", "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--dir", "/home", "--dir", "/home/caplock"];
-  if (policy.network === "none") args.push("--unshare-net");
+  const args = ["--die-with-parent", "--new-session", "--unshare-pid", "--unshare-ipc", "--unshare-uts", "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--dir", "/home", "--dir", "/home/caplock", "--share-net"];
+  // The network namespace is created by util-linux `unshare` for network:none
+  // (see buildLinuxInvocation). This keeps Bubblewrap from attempting a
+  // RTM_NEWADDR loopback configuration that hosted runners may forbid; the
+  // fresh namespace still has no usable interfaces or routes.
+  if (policy.network === "host") args.splice(2, 0, "--unshare-user");
   for (const item of systemPaths) if (existsSync(item)) args.push("--ro-bind", item, item);
   for (const item of ["package.json", "package-lock.json", "pnpm-lock.yaml", "node_modules"]) { const source = path.join(context.projectRoot, item); if (existsSync(source)) args.push("--ro-bind", source, source); }
   args.push("--bind", context.identity.packageDir, context.identity.packageDir);
@@ -22,11 +26,18 @@ export function buildLinuxArgs(command: SandboxCommand, policy: Required<import(
   args.push("--chdir", command.cwd ?? context.identity.packageDir, "--", command.executable, ...command.args);
   return args;
 }
+
+export function buildLinuxInvocation(command: SandboxCommand, policy: Required<import("../types.js").Policy>, context: SandboxContext): { executable: string; args: string[] } {
+  const bubblewrapArgs = buildLinuxArgs(command, policy, context);
+  if (policy.network === "host") return { executable: "bwrap", args: bubblewrapArgs };
+  return { executable: "unshare", args: ["--user", "--map-root-user", "--net", "--", "bwrap", ...bubblewrapArgs] };
+}
+
 export class LinuxBubblewrapBackend implements SandboxBackend {
   readonly id = "linux-bubblewrap"; readonly platform = "linux" as const;
   async checkAvailability(): Promise<SandboxAvailability> {
-    const available = await commandExists("bwrap");
-    return { available, detail: available ? "bubblewrap available" : "Install bubblewrap (for Debian/Ubuntu: sudo apt-get install bubblewrap strace).", capabilities };
+    const available = await commandExists("bwrap") && await commandExists("unshare");
+    return { available, detail: available ? "bubblewrap and util-linux unshare available" : "Install bubblewrap and util-linux unshare (for Debian/Ubuntu: sudo apt-get install bubblewrap util-linux strace).", capabilities };
   }
   async doctor(): Promise<DoctorCheck[]> {
     const bwrap = await this.checkAvailability(); const strace = await commandExists("strace");
@@ -44,6 +55,7 @@ export class LinuxBubblewrapBackend implements SandboxBackend {
   }
   async run(command: SandboxCommand, policy: Required<import("../types.js").Policy>, context: SandboxContext): Promise<SandboxResult> {
     const availability = await this.checkAvailability(); if (!availability.available) throw new Error(availability.detail);
-    return run("bwrap", buildLinuxArgs(command, policy, context), { timeoutMs: context.timeoutMs });
+    const invocation = buildLinuxInvocation(command, policy, context);
+    return run(invocation.executable, invocation.args, { timeoutMs: context.timeoutMs });
   }
 }

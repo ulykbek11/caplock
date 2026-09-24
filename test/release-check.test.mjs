@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import path from "node:path";
 import { checkDoctor, parseDoctorJson, parsePackJson } from "../scripts/release-check-doctor.mjs";
 
 describe("release:check doctor JSON handling", () => {
@@ -13,8 +14,9 @@ describe("release:check doctor JSON handling", () => {
 
   it("invokes the built CLI directly and consumes stdout only", () => {
     let invocation;
+    const root = path.resolve("release-check-fixture");
     const report = checkDoctor({
-      root: "C:\\caplock",
+      root,
       spawn: (executable, args, options) => {
         invocation = { executable, args, options };
         return { status: 0, stdout: '{"ready":true}', stderr: "separate diagnostic" };
@@ -22,7 +24,7 @@ describe("release:check doctor JSON handling", () => {
     });
     expect(report.ready).toBe(true);
     expect(invocation.executable).toBe(process.execPath);
-    expect(invocation.args).toEqual(["C:\\caplock\\dist\\cli.js", "doctor", "--json"]);
+    expect(invocation.args).toEqual([path.join(root, "dist", "cli.js"), "doctor", "--json"]);
     expect(invocation.options.stdio).toBe("pipe");
     expect(invocation.options.shell).toBe(false);
   });

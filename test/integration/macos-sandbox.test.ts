@@ -17,7 +17,7 @@ suite("macOS Seatbelt production sandbox contract", () => {
       expect(available.available, available.detail).toBe(true);
       const command = "test \"$HOME\" != \"$REAL_HOME\" && test -z \"$CAPLOCK_TEST_SECRET\" && echo allowed > allowed && ! test -r '" + path.join(root, ".env") + "' && ! touch '" + path.join(sibling, "escape") + "' && ! /usr/bin/nc -zw1 1.1.1.1 53";
       const result = await backend.run({ executable: "/bin/sh", args: ["-c", command] }, defaultPolicy(), { projectRoot: root, identity: { name: "fixture", version: "1.0.0", packageDir: pkg, packageJsonPath: path.join(pkg, "package.json") }, timeoutMs: 15_000 });
-      expect(result.code, result.stderr).toBe(0);
+      expect(result.code, `Seatbelt contract exit=${result.code}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`).toBe(0);
       expect(existsSync(path.join(pkg, "allowed"))).toBe(true); expect(existsSync(path.join(sibling, "escape"))).toBe(false);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });

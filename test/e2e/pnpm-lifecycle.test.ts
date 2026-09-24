@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -18,6 +18,7 @@ async function fixture(root: string): Promise<void> {
 suite("pnpm lifecycle E2E", () => {
   it("proves pnpm lifecycle interception before an approved script can run", async () => {
     expect(existsSync(cli), "build before E2E").toBe(true); expect(await commandExists("pnpm")).toBe(true);
+    if (process.platform !== "win32") expect(statSync(path.join(path.dirname(cli), "shell.js")).mode & 0o111, "POSIX script-shell shim must be executable").not.toBe(0);
     const root = mkdtempSync(path.join(os.tmpdir(), "caplock-pnpm-e2e-"));
     try {
       await fixture(root);

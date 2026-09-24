@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { buildWindowsChildEnvironment, serializeWindowsEnvironment, windowsSyntheticEnvironmentMatches } from "../src/sandbox/windows.js";
 import { defaultPolicy } from "../src/policy.js";
 
-describe("Windows CreateProcess environment serialization", () => {
+const suite = process.platform === "win32" ? describe : describe.skip;
+
+suite("Windows CreateProcess environment serialization", () => {
   it("ends with two UTF-16 NUL WCHARs", () => {
     const block = serializeWindowsEnvironment({ SystemRoot: "C:\\Windows", TEMP: "C:\\temp" });
     expect(block.length % 2).toBe(0);
