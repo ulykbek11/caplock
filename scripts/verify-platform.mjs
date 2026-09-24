@@ -29,5 +29,10 @@ const doctor = spawnSync(process.execPath, [cli, "doctor", "--json"], { cwd: roo
 if (doctor.status !== 0) { process.stderr.write(doctor.stderr); process.stdout.write(doctor.stdout); process.exit(1); }
 try {
   const report = JSON.parse(doctor.stdout);
-  if (!report.ready) { process.stdout.write(doctor.stdout); process.exit(1); }
+  if (!report.ready) {
+    process.stdout.write(doctor.stdout);
+    const failed = Array.isArray(report.checks) ? report.checks.filter((check) => !check.ok).map((check) => `${check.name}: ${check.detail}`).join("; ") : "doctor reported ready:false";
+    console.error(`::error::Platform doctor failed: ${failed}`);
+    process.exit(1);
+  }
 } catch { process.stderr.write(`doctor did not return valid JSON:\n${doctor.stdout}\n`); process.exit(1); }

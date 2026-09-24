@@ -22,7 +22,7 @@ suite("macOS Seatbelt production sandbox contract", () => {
       let result;
       const context = { projectRoot: root, identity: { name: "fixture", version: "1.0.0", packageDir: pkg, packageJsonPath: path.join(pkg, "package.json") }, childEnv: { ...process.env, REAL_HOME: root, CAPLOCK_TEST_SECRET: "CAPLOCK_TEST_SECRET_MUST_NOT_LEAK" }, timeoutMs: 15_000 };
       try {
-        const launch = await backend.run({ executable: "/bin/true", args: [] }, policy, context);
+        const launch = await backend.run({ executable: "/usr/bin/true", args: [] }, policy, context);
         expect(launch.code, `Seatbelt could not launch a trusted system binary: ${launch.stderr}`).toBe(0);
         result = await backend.run({ executable: "/bin/sh", args: ["-c", command] }, policy, context);
       }

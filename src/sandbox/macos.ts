@@ -27,7 +27,7 @@ export class MacOSSandboxBackend implements SandboxBackend {
     try {
       const profile = path.join(temp, "probe.sb");
       writeFileSync(profile, "(version 1) (deny default) (allow process-exec) (allow process-fork) (allow file-read* (subpath \"/usr\") (subpath \"/System\") (subpath \"/bin\") (subpath \"/sbin\"))");
-      const probe = await run("sandbox-exec", ["-f", profile, "/bin/true"], { timeoutMs: 15_000 });
+      const probe = await run("sandbox-exec", ["-f", profile, "/usr/bin/true"], { timeoutMs: 15_000 });
       const checks: DoctorCheck[] = [{ name: "native macOS backend", ok: probe.code === 0, detail: probe.code === 0 ? "active Seatbelt launch passed" : `Seatbelt launch probe failed (exit=${probe.code}): ${redactText(probe.stderr.trim() || probe.stdout.trim() || "sandbox-exec returned no diagnostic")}` }];
       if (probe.code === 0) {
         const packageDir = path.join(temp, "package"); mkdirSync(packageDir); writeFileSync(path.join(packageDir, "package.json"), '{"name":"probe","version":"1.0.0"}');
