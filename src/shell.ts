@@ -15,6 +15,12 @@ function stage(name: string): void {
   if (process.env.CAPLOCK_DEBUG === "1") console.error(`CapLock stage: ${name}`);
 }
 
+function directNodeEval(command: string): string | undefined {
+  const match = /^node(?:\.exe)?\s+-e\s+("(?:[^"\\]|\\.)*")\s*$/is.exec(command);
+  if (!match) return undefined;
+  try { return JSON.parse(match[1]!); } catch { return undefined; }
+}
+
 async function main(): Promise<void> {
   stage("shell.start");
   const args = process.argv.slice(2); const at = args.indexOf("-c"); const invocationCommand = at >= 0 ? args[at + 1] : undefined;
@@ -54,8 +60,14 @@ async function main(): Promise<void> {
   if (approved.lifecycle.hash !== lifecycle.hash) { console.error("CapLock blocked lifecycle: command hash mismatch"); process.exitCode = 1; return; }
   stage("shell.lock-entry-matched");
   const shell = process.platform === "win32" ? (process.env.ComSpec ?? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "cmd.exe")) : "/bin/sh";
-  const command = lifecycle.command;
-  const shellArgs = process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command];
+  const nodeExecutable = process.env.CAPLOCK_NODE ?? process.execPath;
+  // npm lifecycle scripts commonly begin with `node`. Resolve that command in
+  // the trusted control plane; an AppContainer must not search host PATH.
+  const command = process.platform === "win32" ? lifecycle.command.replace(/^node(?:\.exe)?(?=\s|$)/i, `"${nodeExecutable}"`) : lifecycle.command;
+  const nodeEval = process.platform === "win32" ? directNodeEval(lifecycle.command) : undefined;
+  const sandboxCommand = nodeEval === undefined
+    ? { executable: shell, args: process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command], trustedExecutablePaths: process.platform === "win32" && /^node(?:\.exe)?(?=\s|$)/i.test(lifecycle.command) ? [nodeExecutable] : undefined }
+    : { executable: nodeExecutable, args: ["-e", nodeEval], trustedExecutablePaths: [nodeExecutable] };
   // The lockfile is user-editable input. Validate it in the trusted parent on
   // every invocation, before any lifecycle command reaches a backend.
   const policy = validatePolicy(approved.policy, root, identity.packageDir);
@@ -67,7 +79,7 @@ async function main(): Promise<void> {
   stage("shell.preflight-pass");
   stage("shell.environment-built");
   stage("shell.sandbox-start");
-  const result = await backend.run({ executable: shell, args: shellArgs }, policy, { projectRoot: root, identity, controlEnv: process.env, childEnv: process.env, traceFile: process.env.CAPLOCK_TRACE_FILE, timeoutMs: readConfig(root).execution.timeoutSeconds * 1000 });
+  const result = await backend.run(sandboxCommand, policy, { projectRoot: root, identity, controlEnv: process.env, childEnv: process.env, traceFile: process.env.CAPLOCK_TRACE_FILE, timeoutMs: readConfig(root).execution.timeoutSeconds * 1000 });
   stage("shell.sandbox-exit");
   // The native helper is intentionally captured so CapLock can classify its
   // result, but lifecycle output must still reach npm/the debug harness.

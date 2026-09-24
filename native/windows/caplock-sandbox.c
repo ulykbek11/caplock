@@ -53,6 +53,7 @@ static BOOL grant_appcontainer_access(const wchar_t *path, PSID sid, DWORD acces
   EXPLICIT_ACCESSW entry;
   PACL replacement = NULL;
   ZeroMemory(saved, sizeof(*saved));
+  if (debug_enabled()) fwprintf(stderr, L"CapLock ACL target: %ls access=0x%08lX\n", path, (unsigned long)access);
   PACL dacl = NULL; PSECURITY_DESCRIPTOR descriptor = NULL;
   status = GetNamedSecurityInfoW((LPWSTR)path, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION,
     NULL, NULL, &dacl, NULL, &descriptor);
@@ -140,7 +141,7 @@ static void debug_child_environment(LPWCH block, SIZE_T bytes) {
   SIZE_T index = 0, count = 0, chars = bytes / sizeof(wchar_t); BOOL well_formed = TRUE, sorted = TRUE; const wchar_t *previous = NULL;
   if (!debug_enabled()) return;
   while (index + 1 < chars && block[index] != L'\0') { wchar_t *entry = block + index, *equals = wcschr(entry, L'='); if (equals == NULL || equals == entry) well_formed = FALSE; if (previous != NULL && _wcsicmp(previous, entry) > 0) sorted = FALSE; previous = entry; count++; index += wcslen(entry) + 1; }
-  fwprintf(stderr, L"CapLock child environment block: mode=custom entries=%zu chars=%zu doubleNul=%s validEntries=%s sortedCaseInsensitive=%s\n", count, chars, (index + 1 < chars && block[index] == L'\0' && block[index + 1] == L'\0') ? L"true" : L"false", well_formed ? L"true" : L"false", sorted ? L"true" : L"false");
+  fwprintf(stderr, L"CapLock child environment block: mode=custom entries=%zu chars=%zu doubleNul=%s validEntries=%s sortedCaseInsensitive=%s\n", count, chars, (chars >= 2 && block[chars - 1] == L'\0' && block[chars - 2] == L'\0') ? L"true" : L"false", well_formed ? L"true" : L"false", sorted ? L"true" : L"false");
   for (SIZE_T w = 0; w < _countof(wanted); w++) { BOOL found = FALSE; index = 0; while (index < chars && block[index] != L'\0') { size_t n = wcslen(wanted[w]); if (_wcsnicmp(block + index, wanted[w], n) == 0 && block[index + n] == L'=') { found = TRUE; break; } index += wcslen(block + index) + 1; } fwprintf(stderr, L"CapLock child environment: %ls=%ls\n", wanted[w], found ? L"present" : L"absent"); }
 }
 

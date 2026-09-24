@@ -32,7 +32,7 @@ suite("Windows AppContainer production helper", () => {
     try {
       mkdirSync(packageDir, { recursive: true });
       writeFileSync(path.join(packageDir, "package.json"), '{"name":"fixture","version":"1.0.0"}');
-      const result = await new WindowsSandboxBackend().run({ executable: process.execPath, args: ["-e", "require('fs').writeFileSync('backend-node-marker','ok')"] }, defaultPolicy(), { projectRoot: root, identity: { name: "fixture", version: "1.0.0", packageDir, packageJsonPath: path.join(packageDir, "package.json") }, controlEnv: process.env, childEnv: { ...process.env, CAPLOCK_TEST_SECRET: "not-visible" }, timeoutMs: 30_000 });
+      const result = await new WindowsSandboxBackend().run({ executable: process.execPath, args: ["-e", "require('fs').writeFileSync('backend-node-marker','ok')"], trustedExecutablePaths: [process.execPath] }, defaultPolicy(), { projectRoot: root, identity: { name: "fixture", version: "1.0.0", packageDir, packageJsonPath: path.join(packageDir, "package.json") }, controlEnv: process.env, childEnv: { ...process.env, CAPLOCK_TEST_SECRET: "not-visible" }, timeoutMs: 30_000 });
       expect(result.code, result.stderr).toBe(0);
       expect(readFileSync(path.join(packageDir, "backend-node-marker"), "utf8")).toBe("ok");
     } finally { rmSync(root, { recursive: true, force: true }); }

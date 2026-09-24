@@ -11,6 +11,15 @@ import type { DoctorCheck, SandboxAvailability, SandboxBackend, SandboxCapabilit
 const capabilities: SandboxCapabilities = { filesystemIsolation: true, environmentIsolation: true, networkIsolation: true, processContainment: true, processObservation: false };
 function helperPath(): string { return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../native/bin/caplock-sandbox.exe"); }
 
+/** CreateProcessW requires one NUL after every entry and one extra final NUL. */
+export function serializeWindowsEnvironment(env: Record<string, string>): Buffer {
+  const entries = Object.entries(env).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => {
+    if (!key || key.includes("=") || value.includes("\0")) throw new Error("Invalid Windows child environment entry");
+    return `${key}=${value}\0`;
+  });
+  return Buffer.from(entries.join("") + "\0", "utf16le");
+}
+
 /** AppContainer helper is always resolved by absolute path, never from PATH. */
 export class WindowsSandboxBackend implements SandboxBackend {
   readonly id = "windows-native"; readonly platform = "win32" as const;
@@ -69,7 +78,9 @@ export class WindowsSandboxBackend implements SandboxBackend {
     const availability = await this.checkAvailability(); if (!availability.available) throw new Error(availability.detail);
     mkdirSync(path.join(os.tmpdir(), "caplock"), { recursive: true, mode: 0o700 });
     const sandboxRoot = mkdtempSync(path.join(os.tmpdir(), "caplock", "run-"));
-    const home = path.join(sandboxRoot, "home"); mkdirSync(home, { recursive: true, mode: 0o700 });
+    const childTemp = path.join(sandboxRoot, "child-temp"); const runtimeRoot = path.join(sandboxRoot, "runtime");
+    mkdirSync(childTemp, { recursive: true, mode: 0o700 }); mkdirSync(runtimeRoot, { recursive: true, mode: 0o700 });
+    const home = path.join(childTemp, "home"); mkdirSync(home, { recursive: true, mode: 0o700 });
     const controlEnv = context.controlEnv ?? process.env;
     const env = filterEnvironment(context.childEnv ?? controlEnv, policy.env?.allow ?? []);
     const parent = controlEnv;
@@ -86,18 +97,30 @@ export class WindowsSandboxBackend implements SandboxBackend {
     const cwd = realpathOrResolve(command.cwd ?? packageDir);
     if (!isWithin(cwd, packageDir)) throw new Error("Sandbox working directory must remain within the package.");
     const resolveGrant = (item: string): string => {
-      const resolved = realpathOrResolve(substitutePolicyPath(item, context.projectRoot, packageDir, { home, tmp: sandboxRoot }));
-      const root = item.startsWith("$PACKAGE/") ? packageDir : item.startsWith("$PROJECT/") ? realpathOrResolve(context.projectRoot) : item.startsWith("$HOME/") ? home : sandboxRoot;
+      const resolved = realpathOrResolve(substitutePolicyPath(item, context.projectRoot, packageDir, { home, tmp: childTemp }));
+      const root = item.startsWith("$PACKAGE/") ? packageDir : item.startsWith("$PROJECT/") ? realpathOrResolve(context.projectRoot) : item.startsWith("$HOME/") ? home : childTemp;
       if (!isWithin(resolved, root)) throw new Error(`Policy grant resolves outside its allowed root: ${item}`);
       return resolved;
     };
     const reads = (policy.filesystem?.read ?? []).map(resolveGrant);
     const writes = (policy.filesystem?.write ?? []).map(resolveGrant);
+    // The installed Node runtime is commonly under Program Files, whose DACL
+    // cannot be modified by a normal developer account. Copy the exact trusted
+    // executable into this owned run directory; it is a single self-contained
+    // PE on supported Node 24 Windows builds.
+    const stagedExecutables = (command.trustedExecutablePaths ?? []).map((source, index) => {
+      const trustedSource = realpathOrResolve(source);
+      const destination = path.join(runtimeRoot, `${index}-${path.basename(trustedSource)}`);
+      copyFileSync(trustedSource, destination, 0);
+      return { requested: source, source: trustedSource, destination: realpathOrResolve(destination), runtimeDirectory: runtimeRoot, index };
+    });
+    if (process.env.CAPLOCK_DEBUG === "1") for (const item of stagedExecutables) console.error(`CapLock staged executable: source=${item.source}; destination=${item.destination}`);
     for (const target of writes) mkdirSync(target, { recursive: true, mode: 0o700 });
-    const envFile = path.join(sandboxRoot, "child-environment.utf16");
-    const environmentBlock = Object.entries(env).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${key}=${value}`).join("\0") + "\0\0";
-    writeFileSync(envFile, Buffer.from(environmentBlock, "utf16le"), { mode: 0o600 });
-    const args = ["--package", packageDir, "--temp", sandboxRoot, "--cwd", cwd, "--network", policy.network, "--env-file", envFile, ...reads.flatMap((item) => ["--read", item]), ...writes.flatMap((item) => ["--write", item]), "--", command.executable, ...command.args];
+    const envFile = path.join(childTemp, "child-environment.utf16");
+    writeFileSync(envFile, serializeWindowsEnvironment(env), { mode: 0o600 });
+    const stagedArgs = command.args.map((arg) => stagedExecutables.reduce((value, item) => value.replaceAll(item.requested, item.destination).replaceAll(item.source, item.destination), arg));
+    const stagedCommandExecutable = stagedExecutables.find((item) => item.requested === command.executable || item.source === command.executable)?.destination ?? command.executable;
+    const args = ["--package", packageDir, "--temp", childTemp, "--cwd", cwd, "--network", policy.network, "--env-file", envFile, ...reads.flatMap((item) => ["--read", item]), ...stagedExecutables.flatMap((item) => ["--read", item.runtimeDirectory, "--read", item.destination]), ...writes.flatMap((item) => ["--write", item]), "--", stagedCommandExecutable, ...stagedArgs];
     try { return await run(helperPath(), args, { env: controlEnv, timeoutMs: context.timeoutMs }); } finally { rmSync(sandboxRoot, { recursive: true, force: true }); }
   }
 }
