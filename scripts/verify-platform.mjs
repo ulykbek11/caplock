@@ -17,7 +17,13 @@ function invoke(args, capture = false) {
   if (result.error || result.status !== 0) {
     const phase = args[0] === "run" ? `npm run ${args[1]}` : `npm ${args.join(" ")}`;
     const captured = capture ? `${result.stdout ?? ""}\n${result.stderr ?? ""}` : "";
-    const testSummary = capture ? captured.split(/\r?\n/).filter((line) => /^\s*(?:FAIL\s|AssertionError:|Error:|❯\s|Test Files\s|Tests\s)/u.test(line)).slice(-20).join(" | ") : "";
+    const lines = capture ? captured.split(/\r?\n/).map((line) => line.trim()).filter(Boolean) : [];
+    const marked = lines.filter((line) => /^\s*(?:FAIL\s|AssertionError:|Error:|❯\s|Test Files\s|Tests\s)/u.test(line));
+    // Vitest's glyphs/ANSI output vary across hosted runner encodings. If its
+    // failure markers aren't recognizable, retain the tail so the release
+    // annotation still identifies the actual failing test instead of only
+    // reporting that `npm run test` failed.
+    const testSummary = (marked.length ? marked : lines.slice(-24)).slice(-24).join(" | ").slice(-3500);
     if (capture) {
       if (result.stdout) process.stdout.write(result.stdout);
       if (result.stderr) process.stderr.write(result.stderr);
