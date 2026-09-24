@@ -26,7 +26,8 @@ export class MacOSSandboxBackend implements SandboxBackend {
     const temp = mkdtempSync(path.join(os.tmpdir(), "caplock-seatbelt-"));
     try {
       const profile = path.join(temp, "probe.sb");
-      writeFileSync(profile, ["(version 1)", "(deny default)", "(allow process-fork)", ...["/usr", "/System", "/bin", "/sbin"].map((p) => `(allow process-exec (subpath ${quote(p)}))`), "(allow file-read* (subpath \"/usr\") (subpath \"/System\") (subpath \"/bin\") (subpath \"/sbin\"))"].join("\n"));
+      const systemPaths = ["/usr", "/System", "/bin", "/sbin"];
+      writeFileSync(profile, ["(version 1)", "(deny default)", "(allow process-fork)", ...systemPaths.map((p) => `(allow process-exec (subpath ${quote(p)}))`), ...systemPaths.map((p) => `(allow file-read* (subpath ${quote(p)}))`)].join("\n"));
       const probe = await run("sandbox-exec", ["-f", profile, "/usr/bin/true"], { timeoutMs: 15_000 });
       const checks: DoctorCheck[] = [{ name: "native macOS backend", ok: probe.code === 0, detail: probe.code === 0 ? "active Seatbelt launch passed" : `Seatbelt launch probe failed (exit=${probe.code}): ${redactText(probe.stderr.trim() || probe.stdout.trim() || "sandbox-exec returned no diagnostic")}` }];
       if (probe.code === 0) {
@@ -63,7 +64,7 @@ export class MacOSSandboxBackend implements SandboxBackend {
     // application data on macOS. The standard executable and library roots
     // below are sufficient for the supported shell/Node invocation.
     const executableRoots = ["/usr", "/System", "/bin", "/sbin"];
-    const lines = ["(version 1)", "(deny default)", "(allow process-fork)", ...executableRoots.map((item) => `(allow process-exec (subpath ${quote(item)}))`), "(allow file-read* (subpath \"/usr\") (subpath \"/System\") (subpath \"/bin\") (subpath \"/sbin\"))"];
+    const lines = ["(version 1)", "(deny default)", "(allow process-fork)", ...executableRoots.map((item) => `(allow process-exec (subpath ${quote(item)}))`), ...executableRoots.map((item) => `(allow file-read* (subpath ${quote(item)}))`)];
     for (const item of read) lines.push(`(allow file-read* (subpath ${quote(item)}))`);
     for (const item of write) lines.push(`(allow file-read* file-write* (subpath ${quote(item)}))`);
     for (const item of command.trustedExecutablePaths ?? []) {
