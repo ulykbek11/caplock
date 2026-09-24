@@ -61,12 +61,16 @@ async function main(): Promise<void> {
   stage("shell.lock-entry-matched");
   const shell = process.platform === "win32" ? (process.env.ComSpec ?? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "cmd.exe")) : "/bin/sh";
   const nodeExecutable = process.env.CAPLOCK_NODE ?? process.execPath;
-  // npm lifecycle scripts commonly begin with `node`. Resolve that command in
-  // the trusted control plane; an AppContainer must not search host PATH.
-  const command = process.platform === "win32" ? lifecycle.command.replace(/^node(?:\.exe)?(?=\s|$)/i, `"${nodeExecutable}"`) : lifecycle.command;
+  // Resolve node through the trusted control plane on every OS. Sanitized PATH
+  // intentionally excludes host tool-cache directories, which otherwise makes
+  // pnpm/npm lifecycle commands behave differently on Unix CI runners.
+  const quoteShell = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
+  const command = process.platform === "win32"
+    ? lifecycle.command.replace(/^node(?:\.exe)?(?=\s|$)/i, `"${nodeExecutable}"`)
+    : lifecycle.command.replace(/^node(?:\.exe)?(?=\s|$)/i, quoteShell(nodeExecutable));
   const nodeEval = process.platform === "win32" ? directNodeEval(lifecycle.command) : undefined;
   const sandboxCommand = nodeEval === undefined
-    ? { executable: shell, args: process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command], trustedExecutablePaths: process.platform === "win32" && /^node(?:\.exe)?(?=\s|$)/i.test(lifecycle.command) ? [nodeExecutable] : undefined }
+    ? { executable: shell, args: process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command], trustedExecutablePaths: /^node(?:\.exe)?(?=\s|$)/i.test(lifecycle.command) ? [nodeExecutable] : undefined }
     : { executable: nodeExecutable, args: ["-e", nodeEval], trustedExecutablePaths: [nodeExecutable] };
   // The lockfile is user-editable input. Validate it in the trusted parent on
   // every invocation, before any lifecycle command reaches a backend.
