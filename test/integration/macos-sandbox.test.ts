@@ -20,7 +20,12 @@ suite("macOS Seatbelt production sandbox contract", () => {
       const command = "echo home-check >&2; test \"$HOME\" != \"$REAL_HOME\" || exit 11; echo secret-check >&2; test -z \"$CAPLOCK_TEST_SECRET\" || exit 12; echo tmp-check >&2; test -n \"$TMPDIR\" || exit 13; echo package-write >&2; echo allowed > allowed || exit 14; echo project-read >&2; test ! -r '" + path.join(root, ".env") + "' || exit 15; echo sibling-write >&2; touch '" + path.join(sibling, "escape") + "' 2>/dev/null && exit 16; exit 0";
       const oldDebug = process.env.CAPLOCK_DEBUG; process.env.CAPLOCK_DEBUG = "1";
       let result;
-      try { result = await backend.run({ executable: "/bin/sh", args: ["-c", command] }, policy, { projectRoot: root, identity: { name: "fixture", version: "1.0.0", packageDir: pkg, packageJsonPath: path.join(pkg, "package.json") }, childEnv: { ...process.env, REAL_HOME: root, CAPLOCK_TEST_SECRET: "CAPLOCK_TEST_SECRET_MUST_NOT_LEAK" }, timeoutMs: 15_000 }); }
+      const context = { projectRoot: root, identity: { name: "fixture", version: "1.0.0", packageDir: pkg, packageJsonPath: path.join(pkg, "package.json") }, childEnv: { ...process.env, REAL_HOME: root, CAPLOCK_TEST_SECRET: "CAPLOCK_TEST_SECRET_MUST_NOT_LEAK" }, timeoutMs: 15_000 };
+      try {
+        const launch = await backend.run({ executable: "/bin/true", args: [] }, policy, context);
+        expect(launch.code, `Seatbelt could not launch a trusted system binary: ${launch.stderr}`).toBe(0);
+        result = await backend.run({ executable: "/bin/sh", args: ["-c", command] }, policy, context);
+      }
       finally { if (oldDebug === undefined) delete process.env.CAPLOCK_DEBUG; else process.env.CAPLOCK_DEBUG = oldDebug; }
       expect(result.code, `Seatbelt contract exit=${result.code}\nstdout:\n${result.stdout}\nstderr:\n${result.stderr}`).toBe(0);
       expect(existsSync(path.join(pkg, "allowed"))).toBe(true); expect(existsSync(path.join(sibling, "escape"))).toBe(false);
