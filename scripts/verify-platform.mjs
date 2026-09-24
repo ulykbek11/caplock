@@ -14,7 +14,11 @@ function invoke(args, capture = false) {
   const result = process.platform === "win32"
     ? spawnSync(npm, ["/d", "/s", "/c", ["npm.cmd", ...args].join(" ")], { cwd: root, stdio: capture ? "pipe" : "inherit", encoding: "utf8", shell: false })
     : spawnSync(npm, args, { cwd: root, stdio: capture ? "pipe" : "inherit", encoding: "utf8", shell: false });
-  if (result.error || result.status !== 0) process.exit(result.status ?? 1);
+  if (result.error || result.status !== 0) {
+    const phase = args[0] === "run" ? `npm run ${args[1]}` : `npm ${args.join(" ")}`;
+    console.error(`::error::verify:${requested} phase failed: ${phase}; ${result.error?.message ?? `exit=${result.status ?? 1}`}`);
+    process.exit(result.status ?? 1);
+  }
   return result;
 }
 for (const name of ["lint", "typecheck", "build"]) invoke(["run", name]);
