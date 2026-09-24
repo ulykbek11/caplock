@@ -26,7 +26,7 @@ export class MacOSSandboxBackend implements SandboxBackend {
     const temp = mkdtempSync(path.join(os.tmpdir(), "caplock-seatbelt-"));
     try {
       const profile = path.join(temp, "probe.sb");
-      writeFileSync(profile, "(version 1) (deny default) (allow process-exec) (allow process-fork) (allow file-read* (subpath \"/usr\") (subpath \"/System\") (subpath \"/bin\") (subpath \"/sbin\"))");
+      writeFileSync(profile, ["(version 1)", "(deny default)", "(allow process-fork)", ...["/usr", "/System", "/bin", "/sbin"].map((p) => `(allow process-exec (subpath ${quote(p)}))`), "(allow file-read* (subpath \"/usr\") (subpath \"/System\") (subpath \"/bin\") (subpath \"/sbin\"))"].join("\n"));
       const probe = await run("sandbox-exec", ["-f", profile, "/usr/bin/true"], { timeoutMs: 15_000 });
       const checks: DoctorCheck[] = [{ name: "native macOS backend", ok: probe.code === 0, detail: probe.code === 0 ? "active Seatbelt launch passed" : `Seatbelt launch probe failed (exit=${probe.code}): ${redactText(probe.stderr.trim() || probe.stdout.trim() || "sandbox-exec returned no diagnostic")}` }];
       if (probe.code === 0) {
@@ -62,12 +62,14 @@ export class MacOSSandboxBackend implements SandboxBackend {
     // Never grant /private wholesale: it contains users' temporary files and
     // application data on macOS. The standard executable and library roots
     // below are sufficient for the supported shell/Node invocation.
-    const lines = ["(version 1)", "(deny default)", "(allow process-exec)", "(allow process-fork)", "(allow file-read* (subpath \"/usr\") (subpath \"/System\") (subpath \"/bin\") (subpath \"/sbin\"))"];
+    const executableRoots = ["/usr", "/System", "/bin", "/sbin"];
+    const lines = ["(version 1)", "(deny default)", "(allow process-fork)", ...executableRoots.map((item) => `(allow process-exec (subpath ${quote(item)}))`), "(allow file-read* (subpath \"/usr\") (subpath \"/System\") (subpath \"/bin\") (subpath \"/sbin\"))"];
     for (const item of read) lines.push(`(allow file-read* (subpath ${quote(item)}))`);
     for (const item of write) lines.push(`(allow file-read* file-write* (subpath ${quote(item)}))`);
     for (const item of command.trustedExecutablePaths ?? []) {
       const executable = canonicalPath(item);
       lines.push(`(allow file-read* (literal ${quote(executable)}))`);
+      lines.push(`(allow process-exec (literal ${quote(executable)}))`);
       // macOS requires search permission on each directory while resolving an
       // executable path. Metadata-only grants permit traversal without making
       // adjacent toolchain files readable.
