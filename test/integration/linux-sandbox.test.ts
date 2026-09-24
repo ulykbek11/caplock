@@ -24,7 +24,7 @@ suite("Linux production sandbox contract", () => {
       expect(readFileSync(path.join(pkg, "allowed"), "utf8")).toContain("allowed");
       expect(existsSync(path.join(sibling, "escape"))).toBe(false);
 
-      const server = net.createServer((socket) => socket.end("caplock\n"));
+      const server = net.createServer((socket) => { socket.on("error", () => undefined); socket.end("caplock\n"); });
       await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", () => resolve()); });
       const address = server.address(); if (!address || typeof address === "string") throw new Error("Could not start controlled localhost network endpoint");
       const script = "const n=require('node:net'),s=n.createConnection({host:'127.0.0.1',port:Number(process.argv[1])});s.once('connect',()=>{s.end();process.exit(0)});s.once('error',()=>process.exit(2));setTimeout(()=>process.exit(3),3000)";

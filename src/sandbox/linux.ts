@@ -64,7 +64,7 @@ export class LinuxBubblewrapBackend implements SandboxBackend {
         const context = { projectRoot: root, identity, childEnv: { ...process.env, CAPLOCK_TEST_SECRET: "CAPLOCK_SECRET_DO_NOT_LEAK" }, timeoutMs: 15_000 };
         const probe = await this.run({ executable: "/bin/sh", args: ["-c", "test \"$HOME\" = /home/caplock && test -z \"$CAPLOCK_TEST_SECRET\" && echo ok > package-write" ] }, policy, context);
         checks.push({ name: "Linux production filesystem/environment contract", ok: probe.code === 0 && existsSync(path.join(packageDir, "package-write")), detail: probe.code === 0 ? "active LinuxSandboxBackend filesystem/environment probe passed" : `contract probe failed: ${redactText(probe.stderr.trim())}` });
-        const server = net.createServer((socket) => socket.end("caplock\n"));
+        const server = net.createServer((socket) => { socket.on("error", () => undefined); socket.end("caplock\n"); });
         await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", () => resolve()); });
         const address = server.address();
         if (!address || typeof address === "string") throw new Error("Could not start the controlled Linux network probe endpoint.");

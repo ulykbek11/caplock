@@ -37,7 +37,7 @@ export class MacOSSandboxBackend implements SandboxBackend {
         const context = { projectRoot: temp, identity, childEnv: { ...process.env, CAPLOCK_TEST_SECRET: "CAPLOCK_SECRET_DO_NOT_LEAK" }, timeoutMs: 15_000 };
         const contract = await this.run({ executable: "/bin/sh", args: ["-c", "test -z \"$CAPLOCK_TEST_SECRET\" && echo ok > package-write"] }, policy, context);
         checks.push({ name: "macOS production filesystem/environment/network:none contract", ok: contract.code === 0, detail: contract.code === 0 ? "active MacOSSandboxBackend probe passed" : `Seatbelt contract probe failed: ${redactText(contract.stderr.trim())}` });
-        const server = net.createServer((socket) => socket.end("caplock\n"));
+        const server = net.createServer((socket) => { socket.on("error", () => undefined); socket.end("caplock\n"); });
         await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", () => resolve()); });
         const address = server.address();
         if (!address || typeof address === "string") throw new Error("Could not start the controlled macOS network probe endpoint.");
