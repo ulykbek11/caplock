@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { run } from "../../src/process.js";
 import { defaultPolicy } from "../../src/policy.js";
-import { WindowsSandboxBackend } from "../../src/sandbox/windows.js";
+import { runWindowsNetworkContract, WindowsSandboxBackend } from "../../src/sandbox/windows.js";
 
 /* This suite deliberately invokes the shipped native executable. It is enabled
  * by verify:windows / test:windows-native rather than being simulated on other OSes. */
@@ -36,5 +36,11 @@ suite("Windows AppContainer production helper", () => {
       expect(result.code, result.stderr).toBe(0);
       expect(readFileSync(path.join(packageDir, "backend-node-marker"), "utf8")).toBe("ok");
     } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 45_000);
+
+  it("actively denies network:none and permits the same configured-resolver DNS request under network:host", async () => {
+    const result = await runWindowsNetworkContract();
+    expect(result.defaultDeny, result.detail).toBe(true);
+    expect(result.hostAllow, result.detail).toBe(true);
   }, 45_000);
 });

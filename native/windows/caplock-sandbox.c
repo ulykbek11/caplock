@@ -155,12 +155,38 @@ static int probe_write(const wchar_t *marker) {
   CloseHandle(file); return 0;
 }
 
-static int probe_environment(void) {
-  wchar_t home[MAX_PATH], profile[MAX_PATH], temp[MAX_PATH], tmp[MAX_PATH];
+static BOOL equal_windows_path(const wchar_t *left, const wchar_t *right) {
+  wchar_t a[MAX_PATH], b[MAX_PATH];
+  DWORD al = GetFullPathNameW(left, _countof(a), a, NULL), bl = GetFullPathNameW(right, _countof(b), b, NULL);
+  if (!al || al >= _countof(a) || !bl || bl >= _countof(b)) return FALSE;
+  for (DWORD i = 0; a[i]; i++) if (a[i] == L'/') a[i] = L'\\';
+  for (DWORD i = 0; b[i]; i++) if (b[i] == L'/') b[i] = L'\\';
+  while (wcslen(a) > 3 && a[wcslen(a)-1] == L'\\') a[wcslen(a)-1] = 0;
+  while (wcslen(b) > 3 && b[wcslen(b)-1] == L'\\') b[wcslen(b)-1] = 0;
+  return _wcsicmp(a, b) == 0;
+}
+
+static BOOL equal_windows_fragment(const wchar_t *left, const wchar_t *right) {
+  wchar_t a[MAX_PATH], b[MAX_PATH];
+  wcsncpy_s(a, _countof(a), left, _TRUNCATE); wcsncpy_s(b, _countof(b), right, _TRUNCATE);
+  for (DWORD i = 0; a[i]; i++) if (a[i] == L'/') a[i] = L'\\';
+  for (DWORD i = 0; b[i]; i++) if (b[i] == L'/') b[i] = L'\\';
+  while (wcslen(a) > 1 && a[wcslen(a)-1] == L'\\') a[wcslen(a)-1] = 0;
+  while (wcslen(b) > 1 && b[wcslen(b)-1] == L'\\') b[wcslen(b)-1] = 0;
+  return _wcsicmp(a, b) == 0;
+}
+
+static int probe_environment(int argc, wchar_t **argv) {
+  wchar_t home[MAX_PATH], profile[MAX_PATH], temp[MAX_PATH], tmp[MAX_PATH], drive[MAX_PATH], pathpart[MAX_PATH], appcontainer_temp[MAX_PATH];
   DWORD secret = GetEnvironmentVariableW(L"CAPLOCK_TEST_SECRET", NULL, 0);
   if (secret != 0) { fwprintf(stderr, L"caplock-sandbox: probe environment secret is visible\n"); return 30; }
-  if (GetEnvironmentVariableW(L"HOME", home, _countof(home)) == 0 || GetEnvironmentVariableW(L"USERPROFILE", profile, _countof(profile)) == 0 || GetEnvironmentVariableW(L"TEMP", temp, _countof(temp)) == 0 || GetEnvironmentVariableW(L"TMP", tmp, _countof(tmp)) == 0) { fwprintf(stderr, L"caplock-sandbox: probe synthetic environment variable missing\n"); return 31; }
-  if (wcscmp(home, profile) != 0 || wcscmp(home, temp) != 0 || wcscmp(home, tmp) != 0) { fwprintf(stderr, L"caplock-sandbox: probe synthetic HOME/TEMP mismatch\n"); return 32; }
+  if (argc != 6 || GetEnvironmentVariableW(L"HOME", home, _countof(home)) == 0 || GetEnvironmentVariableW(L"USERPROFILE", profile, _countof(profile)) == 0 || GetEnvironmentVariableW(L"TEMP", temp, _countof(temp)) == 0 || GetEnvironmentVariableW(L"TMP", tmp, _countof(tmp)) == 0 || GetEnvironmentVariableW(L"HOMEDRIVE", drive, _countof(drive)) == 0 || GetEnvironmentVariableW(L"HOMEPATH", pathpart, _countof(pathpart)) == 0) { fwprintf(stderr, L"caplock-sandbox: probe synthetic environment variable missing or expected values absent\n"); return 31; }
+  DWORD app_temp_len = GetTempPathW(_countof(appcontainer_temp), appcontainer_temp);
+  if (!app_temp_len || app_temp_len >= _countof(appcontainer_temp)) { fwprintf(stderr, L"caplock-sandbox: probe GetTempPathW failed (%lu)\n", GetLastError()); return 33; }
+  wprintf(L"HOME=%ls\nUSERPROFILE=%ls\nTEMP=%ls\nTMP=%ls\nHOMEDRIVE=%ls\nHOMEPATH=%ls\nAPP_CONTAINER_TEMP=%ls\n", home, profile, temp, tmp, drive, pathpart, appcontainer_temp);
+  if (!equal_windows_path(home, argv[2]) || !equal_windows_path(profile, argv[3]) || !equal_windows_path(temp, appcontainer_temp) || !equal_windows_path(tmp, appcontainer_temp) || !equal_windows_fragment(drive, argv[4]) || !equal_windows_fragment(pathpart, argv[5])) {
+    fwprintf(stderr, L"caplock-sandbox: probe synthetic environment mismatch; expected HOME=%ls USERPROFILE=%ls HOMEDRIVE=%ls HOMEPATH=%ls; AppContainer TEMP/TMP expected GetTempPathW=%ls\n", argv[2], argv[3], argv[4], argv[5], appcontainer_temp); return 32;
+  }
   return 0;
 }
 
@@ -193,8 +219,8 @@ int wmain(int argc, wchar_t **argv) {
   const wchar_t *reads[MAX_GRANTS] = { NULL }, *writes[MAX_GRANTS] = { NULL };
   int read_count = 0, write_count = 0, command_index = -1, index;
   wchar_t profile_name[128], *command_line = NULL;
-  PSID appcontainer_sid = NULL, network_sid = NULL;
-  SID_AND_ATTRIBUTES capability;
+  PSID appcontainer_sid = NULL, network_sid = NULL, private_network_sid = NULL;
+  SID_AND_ATTRIBUTES capabilities[2];
   SECURITY_CAPABILITIES security_capabilities;
   SIZE_T attributes_size = 0;
   LPPROC_THREAD_ATTRIBUTE_LIST attributes = NULL;
@@ -211,7 +237,7 @@ int wmain(int argc, wchar_t **argv) {
   if (argc == 2 && wcscmp(argv[1], L"--help") == 0) { wprintf(L"Usage: caplock-sandbox --package DIR --temp DIR --cwd DIR --network none|host --env-file FILE [--read DIR] [--write DIR] -- EXECUTABLE [ARGS...]\n       caplock-sandbox --selftest\n"); return 0; }
   if (argc == 2 && wcscmp(argv[1], L"--selftest") == 0) return selftest();
   if (argc == 3 && wcscmp(argv[1], L"--probe-write") == 0) return probe_write(argv[2]);
-  if (argc == 2 && wcscmp(argv[1], L"--probe-env") == 0) return probe_environment();
+  if (argc >= 2 && wcscmp(argv[1], L"--probe-env") == 0) return probe_environment(argc, argv);
 
   for (index = 1; index < argc; index++) {
     if (wcscmp(argv[index], L"--") == 0) { command_index = index + 1; break; }
@@ -244,11 +270,13 @@ int wmain(int argc, wchar_t **argv) {
   for (index = 0; index < write_count; index++) if (!grant_appcontainer_access(writes[index], appcontainer_sid, GENERIC_ALL, &acls[acl_count++])) goto cleanup;
 
   ZeroMemory(&security_capabilities, sizeof(security_capabilities)); security_capabilities.AppContainerSid = appcontainer_sid;
-  ZeroMemory(&capability, sizeof(capability));
+  ZeroMemory(capabilities, sizeof(capabilities));
   if (wcscmp(network, L"host") == 0) {
     if (!ConvertStringSidToSidW(L"S-1-15-3-1", &network_sid)) { print_last_error(L"ConvertStringSidToSidW"); goto cleanup; }
-    capability.Sid = network_sid; capability.Attributes = SE_GROUP_ENABLED;
-    security_capabilities.Capabilities = &capability; security_capabilities.CapabilityCount = 1;
+    if (!ConvertStringSidToSidW(L"S-1-15-3-3", &private_network_sid)) { print_last_error(L"ConvertStringSidToSidW private network"); goto cleanup; }
+    capabilities[0].Sid = network_sid; capabilities[0].Attributes = SE_GROUP_ENABLED;
+    capabilities[1].Sid = private_network_sid; capabilities[1].Attributes = SE_GROUP_ENABLED;
+    security_capabilities.Capabilities = capabilities; security_capabilities.CapabilityCount = 2;
   }
   InitializeProcThreadAttributeList(NULL, 1, 0, &attributes_size);
   attributes = (LPPROC_THREAD_ATTRIBUTE_LIST)HeapAlloc(GetProcessHeap(), 0, attributes_size);
@@ -291,6 +319,7 @@ cleanup:
   if (attributes != NULL) { DeleteProcThreadAttributeList(attributes); HeapFree(GetProcessHeap(), 0, attributes); }
   while (acl_count > 0) restore_acl(&acls[--acl_count]);
   if (network_sid != NULL) LocalFree(network_sid);
+  if (private_network_sid != NULL) LocalFree(private_network_sid);
   if (appcontainer_sid != NULL) FreeSid(appcontainer_sid);
   if (profile_created) DeleteAppContainerProfile(profile_name);
   return success ? (int)exit_code : 1;
