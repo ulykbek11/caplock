@@ -10,6 +10,7 @@ import { sha256 } from "../../src/util.js";
 
 const suite = process.platform === "win32" ? describe : describe.skip;
 const shell = path.resolve("native/bin/caplock-shell.exe");
+const packageMetadata = JSON.parse(readFileSync(path.resolve("package.json"), "utf8")) as { name: string; version: string };
 
 suite("Windows native lifecycle shell", () => {
   it("matches exact npm metadata and reaches the production backend", async () => {
@@ -34,12 +35,12 @@ suite("Windows native lifecycle shell", () => {
         npm_lifecycle_script: "vitest run test/security test/integration",
         npm_package_json: path.resolve("package.json"),
         npm_package_name: "caplock-runtime",
-        npm_package_version: "0.1.0",
+        npm_package_version: packageMetadata.version,
         NPM_LIFECYCLE_EVENT: "test:security",
         NPM_LIFECYCLE_SCRIPT: "vitest run test/security test/integration",
         NPM_PACKAGE_JSON: path.resolve("package.json"),
         NPM_PACKAGE_NAME: "caplock-runtime",
-        NPM_PACKAGE_VERSION: "0.1.0",
+        NPM_PACKAGE_VERSION: packageMetadata.version,
       });
       const lifecycleMetadataKeys = new Set([
         "npm_lifecycle_event", "npm_lifecycle_script", "npm_package_json",

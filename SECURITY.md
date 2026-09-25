@@ -1,9 +1,7 @@
-# Security model
+# Security policy
 
-CapLock uses a native process boundary: Bubblewrap on Linux, classic AppContainer plus a Job Object on Windows, and Seatbelt on macOS where `sandbox-exec` is available.
+CapLock treats dependency lifecycle scripts as untrusted code and runs reviewed npm and pnpm dependency scripts through a native OS sandbox. The required platform checks are active: `caplock doctor`, the platform integration suite, and the release-contract CI matrix exercise the production backend. If a required backend capability or probe is unavailable, CapLock refuses lifecycle execution rather than falling back to an unrestricted process.
 
-These properties are security claims only when the active backend contract passes `caplock doctor` and its platform integration suite. An unavailable or failing backend causes lifecycle execution to fail closed.
+The default policy uses a synthetic home and temporary area, filters sensitive environment values, restricts filesystem access, and denies network access. `network: host` grants ordinary host networking without domain filtering. See [THREAT-MODEL.md](THREAT-MODEL.md) for assets, boundaries, and exclusions.
 
-It does not protect against kernel or sandbox vulnerabilities, root users, sandbox escapes, malicious native kernel exploits, every persistence technique, root-project scripts, or domain-level network policy. `network: host` deliberately gives the package normal host networking; it is not domain-filtered.
-
-Report vulnerabilities privately through [GitHub Private Vulnerability Reporting](https://github.com/ulykbek11/caplock/security/advisories/new). Do not include secrets or exploit details in public issues.
+Report security vulnerabilities privately through [GitHub Private Vulnerability Reporting](https://github.com/ulykbek11/caplock/security/advisories/new). Please do not include credentials or exploit details in public issues.

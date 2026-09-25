@@ -6,6 +6,7 @@ import { commandExists, packageManagerCommand, run } from "../../src/process.js"
 
 const suite = ["win32", "linux", "darwin"].includes(process.platform) ? describe : describe.skip;
 const cli = path.resolve("dist", "cli.js");
+const packageMetadata = JSON.parse(readFileSync(path.resolve("package.json"), "utf8")) as { name: string; version: string };
 
 async function fixture(root: string): Promise<string> {
   const dep = path.join(root, "fixture-dependency"); mkdirSync(dep, { recursive: true });
@@ -28,7 +29,7 @@ suite("npm lifecycle E2E", () => {
       const npmCache = path.join(root, ".npm-cache");
       // Simulate `npm run test:e2e:npm`: these outer lifecycle values must not
       // become the dependency postinstall identity.
-      const npmEnv = { ...process.env, npm_config_cache: npmCache, NPM_CONFIG_CACHE: npmCache, npm_lifecycle_event: "outer-event", npm_lifecycle_script: "outer-script", npm_package_json: path.resolve("package.json"), npm_package_name: "caplock-runtime", npm_package_version: "0.0.0", npm_command: "run test:e2e:npm" };
+      const npmEnv = { ...process.env, npm_config_cache: npmCache, NPM_CONFIG_CACHE: npmCache, npm_lifecycle_event: "outer-event", npm_lifecycle_script: "outer-script", npm_package_json: path.resolve("package.json"), npm_package_name: packageMetadata.name, npm_package_version: packageMetadata.version, npm_command: "run test:e2e:npm" };
       const ignored = await run(packageManagerCommand("npm"), ["install", "--ignore-scripts"], { cwd: root, env: npmEnv, timeoutMs: 60_000 });
       expect(ignored.code, ignored.stderr).toBe(0);
       const packageDir = path.join(root, "node_modules", "fixture-dependency");

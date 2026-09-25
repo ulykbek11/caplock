@@ -1,14 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { checkDoctor, parseDoctorJson, parsePackJson } from "../scripts/release-check-doctor.mjs";
+const packageVersion = JSON.parse(readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../package.json"), "utf8")).version;
 
 describe("release:check doctor JSON handling", () => {
   it("accepts clean JSON and rejects npm script banners instead of parsing mixed output", () => {
     expect(parseDoctorJson('{"ready":true}')).toEqual({ ready: true });
-    expect(() => parseDoctorJson(`> caplock-runtime@0.1.0 dev\n{"ready":true}`))
+    expect(() => parseDoctorJson(`> caplock-runtime@${packageVersion} dev\n{"ready":true}`))
       .toThrow("direct doctor command returned malformed JSON on stdout");
     expect(parsePackJson('[{"filename":"caplock.tgz"}]').filename).toBe("caplock.tgz");
-    expect(() => parsePackJson(`> caplock-runtime@0.1.0 prepack\n[{"filename":"caplock.tgz"}]`))
+    expect(() => parsePackJson(`> caplock-runtime@${packageVersion} prepack\n[{"filename":"caplock.tgz"}]`))
       .toThrow("npm pack returned malformed JSON on stdout");
   });
 

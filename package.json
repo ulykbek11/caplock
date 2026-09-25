@@ -1,16 +1,49 @@
 {
   "name": "caplock-runtime",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": false,
-  "description": "Sandbox dependency lifecycle scripts before they touch your machine.",
-  "keywords": ["security", "npm", "pnpm", "sandbox", "lifecycle"],
-  "repository": { "type": "git", "url": "git+https://github.com/ulykbek11/caplock.git" },
-  "bugs": { "url": "https://github.com/ulykbek11/caplock/issues" },
+  "description": "Review and sandbox npm and pnpm dependency lifecycle scripts on Windows, Linux, and macOS.",
+  "keywords": [
+    "security",
+    "supply-chain",
+    "developer-tools",
+    "npm",
+    "pnpm",
+    "sandbox",
+    "lifecycle",
+    "appcontainer",
+    "bubblewrap",
+    "seatbelt"
+  ],
+  "author": "ulykbek11",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ulykbek11/caplock.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ulykbek11/caplock/issues"
+  },
   "homepage": "https://github.com/ulykbek11/caplock#readme",
   "type": "module",
-  "bin": { "caplock": "./dist/cli.js", "caplock-shell": "./dist/shell.js" },
-  "exports": { "./package.json": "./package.json" },
-  "files": ["dist/", "native/bin/caplock-sandbox.exe", "native/bin/caplock-shell.exe", "README.md", "SECURITY.md", "THREAT-MODEL.md", "ARCHITECTURE.md", "CHANGELOG.md", "RELEASE.md"],
+  "bin": {
+    "caplock": "./dist/cli.js",
+    "caplock-shell": "./dist/shell.js"
+  },
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/",
+    "native/bin/caplock-sandbox.exe",
+    "native/bin/caplock-shell.exe",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "THREAT-MODEL.md",
+    "ARCHITECTURE.md",
+    "CHANGELOG.md"
+  ],
   "scripts": {
     "build": "node scripts/build.mjs",
     "prepack": "node scripts/prepare-package.mjs",
@@ -25,7 +58,7 @@
     "test:macos-native": "vitest run test/integration/macos-sandbox.test.ts",
     "test:e2e:npm": "vitest run test/e2e/npm-lifecycle.test.ts",
     "test:e2e:pnpm": "vitest run test/e2e/pnpm-lifecycle.test.ts",
-    "test:e2e": "npm.cmd run test:e2e:npm && npm.cmd run test:e2e:pnpm",
+    "test:e2e": "npm run test:e2e:npm && npm run test:e2e:pnpm",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "demo": "tsx examples/demo/run-demo.ts",
@@ -40,7 +73,24 @@
     "native:diagnostic:run": "powershell -ExecutionPolicy Bypass -File scripts/run-appcontainer-diagnostic.ps1",
     "native:diagnostic": "npm.cmd run native:diagnostic:build && npm.cmd run native:diagnostic:run"
   },
-  "engines": { "node": ">=24" },
-  "dependencies": { "commander": "^14.0.0", "picocolors": "^1.1.1", "yaml": "^2.8.1", "zod": "^4.1.5" },
-  "devDependencies": { "@eslint/js": "^9.35.0", "@types/node": "^24.3.1", "eslint": "^9.35.0", "prettier": "^3.6.2", "tsup": "^8.5.0", "tsx": "^4.20.5", "typescript": "^5.9.2", "typescript-eslint": "^8.42.0", "vitest": "^3.2.4" }
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "commander": "^14.0.0",
+    "picocolors": "^1.1.1",
+    "yaml": "^2.8.1",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.35.0",
+    "@types/node": "^24.3.1",
+    "eslint": "^9.35.0",
+    "prettier": "^3.6.2",
+    "tsup": "^8.5.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.42.0",
+    "vitest": "^3.2.4"
+  }
 }

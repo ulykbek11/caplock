@@ -1,5 +1,21 @@
 # Contributing
 
-Use Node 24+ on Linux, then run `npm ci`, `npm test`, `npm run lint`, `npm run typecheck`, and `npm run build`. Add fixtures for lifecycle behavior without real credentials. Security bugs should be reported privately.
+Use Node.js 24 or later and work from a clean checkout:
 
-Run `npm run verify:windows`, `npm run verify:linux`, or `npm run verify:macos` on the matching native OS before changing a sandbox claim. Never replace an OS enforcement test with a mock.
+```sh
+npm ci
+npm test
+npm run lint
+npm run typecheck
+npm run build
+```
+
+Run the matching native release contract before changing backend or security behavior:
+
+```sh
+npm run verify:windows # Windows 10/11 x64
+npm run verify:linux   # Linux
+npm run verify:macos   # macOS
+```
+
+The platform verification includes the active security contract, doctor, and npm/pnpm lifecycle E2E tests. Do not convert required native tests into mocks or skips. Tests and fixtures must use synthetic secrets only. Report vulnerabilities through the private reporting channel in [SECURITY.md](SECURITY.md).
