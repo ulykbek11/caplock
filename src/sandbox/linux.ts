@@ -18,6 +18,8 @@ export function buildLinuxArgs(command: SandboxCommand, policy: Required<import(
   args.push("--bind", context.identity.packageDir, context.identity.packageDir);
   for (const item of policy.filesystem?.read ?? []) { const source = substitutePolicyPath(item, context.projectRoot, context.identity.packageDir, { home: "/home/caplock", tmp: "/tmp" }); if (existsSync(source)) args.push("--ro-bind", source, source); }
   for (const item of policy.filesystem?.write ?? []) { const source = substitutePolicyPath(item, context.projectRoot, context.identity.packageDir, { home: "/home/caplock", tmp: "/tmp" }); mkdirSync(source, { recursive: true }); args.push("--bind", source, source); }
+  // bwrap inherits the control process environment unless explicitly cleared.
+  args.push("--clearenv");
   for (const [key, value] of Object.entries(filterEnvironment(context.childEnv ?? context.controlEnv ?? process.env, policy.env?.allow ?? []))) args.push("--setenv", key, value);
   if (policy.network === "none") args.push("--seccomp", "3");
   for (const executable of command.trustedExecutablePaths ?? []) if (existsSync(executable)) args.push("--ro-bind", executable, executable);
@@ -32,13 +34,17 @@ export function buildLinuxInvocation(command: SandboxCommand, policy: Required<i
 // A seccomp-BPF filter denies network syscalls in the child tree without
 // creating/configuring a network namespace. This works on hosted kernels that
 // forbid RTM_NEWADDR while retaining kernel-enforced network denial.
-function networkDenyFilter(): Buffer {
-  const arch = process.arch === "arm64" ? 0xc00000b7 : 0xc000003e;
-  if (process.arch !== "x64" && process.arch !== "arm64") throw new Error(`Linux network isolation is unsupported on ${process.arch}.`);
-  const calls = process.arch === "arm64"
-    ? [198, 203, 200, 201, 202, 206, 207, 210, 199, 211, 212, 242, 243, 269, 425, 426]
-    : [41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 53, 288, 299, 307, 425, 426];
+export function networkDenyFilter(architecture: string = process.arch): Buffer {
+  const arch = architecture === "arm64" ? 0xc00000b7 : 0xc000003e;
+  if (architecture !== "x64" && architecture !== "arm64") throw new Error(`Linux network isolation is unsupported on ${architecture}.`);
+  const calls = architecture === "arm64"
+    ? [198, 203, 200, 201, 202, 206, 207, 210, 211, 212, 242, 243, 269, 425, 426]
+    : [41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 288, 299, 307, 425, 426];
   const ins: Array<[number, number, number, number]> = [[0x20, 0, 0, 4], [0x15, 1, 0, arch], [0x06, 0, 0, 0x80000000], [0x20, 0, 0, 0]];
+  // libuv uses AF_UNIX socketpairs for default child-process pipes. Permit only
+  // that local IPC domain (args[0] at seccomp_data offset 16), not other families.
+  // Non-socketpair calls skip this block with the syscall number still loaded.
+  ins.push([0x15, 0, 4, architecture === "arm64" ? 199 : 53], [0x20, 0, 0, 16], [0x15, 1, 0, 1], [0x06, 0, 0, 0x00050000 | 1], [0x06, 0, 0, 0x7fff0000]);
   for (const nr of [...new Set(calls)]) ins.push([0x15, 0, 1, nr], [0x06, 0, 0, 0x00050000 | 1]);
   ins.push([0x06, 0, 0, 0x7fff0000]);
   const bpf = Buffer.alloc(ins.length * 8);

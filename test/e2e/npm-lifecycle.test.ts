@@ -16,7 +16,7 @@ const path = require('node:path');
 const dgram = require('node:dgram');
 const { spawnSync } = require('node:child_process');
 const root = path.resolve(process.cwd(), '..', '..');
-const denied = (action) => { try { action(); return false; } catch (error) { return error && (error.code === 'EPERM' || error.code === 'EACCES'); } };
+const denied = (action, field) => { try { action(); return false; } catch (error) { result[field + '_error'] = error && error.code || null; return error && ['EPERM', 'EACCES', 'ENOENT', 'EROFS'].includes(error.code); } };
 const resultPath = 'caplock-attack-results.json';
 const result = { stage: 'start', package_write: false, project_env_read: false, project_root_write: false, secret_env: false, trusted_preload_present: false, child_spawn_started: false, child_spawn_returned: false, child_started: false, child_exit: null, child_escape: false, parent_continues: false, network_started: false, network_finished: false, network: false, error: null };
 const checkpoint = (stage, values = {}) => { Object.assign(result, values, { stage }); fs.writeFileSync(resultPath, JSON.stringify(result)); };
@@ -25,8 +25,8 @@ const lifecycleSucceeded = () => result.package_write && result.project_env_read
 process.once('uncaughtException', (error) => { checkpoint('uncaught_exception', { error: error && (error.code || error.message || 'uncaught') }); process.exitCode = 2; });
 try {
   fs.writeFileSync('caplock-lifecycle-marker', 'intercepted'); checkpoint('package_write', { package_write: true });
-  checkpoint('project_env_read_started'); result.project_env_read = denied(() => fs.readFileSync(path.join(root, '.env'))); checkpoint('project_env_read', { project_env_read: result.project_env_read });
-  checkpoint('project_root_write_started'); result.project_root_write = denied(() => fs.writeFileSync(path.join(root, 'CAPLOCK_ESCAPE.txt'), 'escape')); checkpoint('project_root_write', { project_root_write: result.project_root_write });
+  checkpoint('project_env_read_started'); result.project_env_read = denied(() => fs.readFileSync(path.join(root, '.env')), 'project_env_read'); checkpoint('project_env_read', { project_env_read: result.project_env_read });
+  checkpoint('project_root_write_started'); result.project_root_write = denied(() => fs.writeFileSync(path.join(root, 'CAPLOCK_ESCAPE.txt'), 'escape'), 'project_root_write'); checkpoint('project_root_write', { project_root_write: result.project_root_write });
   result.secret_env = process.env.CAPLOCK_TEST_SECRET === undefined; checkpoint('secret_env', { secret_env: result.secret_env });
   result.trusted_preload_present = typeof process.env.NODE_OPTIONS === 'string' && process.env.NODE_OPTIONS.includes('caplock-pipe-shim.node');
   checkpoint('trusted_preload_environment', { trusted_preload_present: result.trusted_preload_present });
@@ -34,9 +34,9 @@ try {
   const child = spawnSync(process.execPath, ['-e', "require('node:fs').writeFileSync('caplock-child-entered.marker','ok');process.exit(0)"], { timeout: 3000 });
   result.child_spawn_returned = true; result.child_started = typeof child.pid === 'number'; result.child_exit = child.status;
   checkpoint('child_spawn_returned', { child_spawn_returned: result.child_spawn_returned, child_started: result.child_started, child_exit: result.child_exit, child_error: child.error && child.error.code || null });
-  const escapeChild = spawnSync(process.execPath, ['-e', "const fs=require('node:fs'),path=require('node:path');try{fs.writeFileSync(path.resolve(process.cwd(),'..','..','CHILD_ESCAPE.txt'),'escape');process.exit(9)}catch(error){process.exit(error&&(error.code==='EPERM'||error.code==='EACCES')?0:8)}"], { timeout: 3000 });
+  const escapeChild = spawnSync(process.execPath, ['-e', "const fs=require('node:fs'),path=require('node:path');try{fs.writeFileSync(path.resolve(process.cwd(),'..','..','CHILD_ESCAPE.txt'),'escape');process.exitCode=9}catch(error){console.log(error.code || 'UNKNOWN');process.exitCode=error&&['EPERM','EACCES','ENOENT','EROFS'].includes(error.code)?0:8}"], { timeout: 3000 });
   result.child_escape = escapeChild.status === 0 && !fs.existsSync(path.join(root, 'CHILD_ESCAPE.txt'));
-  checkpoint('child_escape', { child_escape: result.child_escape, child_escape_exit: escapeChild.status, child_escape_error: escapeChild.error && escapeChild.error.code || null });
+  checkpoint('child_escape', { child_escape: result.child_escape, child_escape_exit: escapeChild.status, child_escape_error: escapeChild.error && escapeChild.error.code || null, child_escape_denial_code: escapeChild.stdout && escapeChild.stdout.toString().trim() || null });
   result.parent_continues = true; checkpoint('parent_continues', { parent_continues: true });
 } catch (error) {
   checkpoint('probe_exception', { error: error && (error.code || error.message || 'exception') }); process.exitCode = 2;
