@@ -54,11 +54,12 @@ function evaluateFilter(filter: Buffer, arch: number, syscall: number, family = 
 
 describe("Linux network seccomp filter", () => {
   it.each([
-    { name: "x64", arch: 0xc000003e, socketpair: 53, read: 0, blocked: [41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 288, 299, 307, 425, 426] },
-    { name: "arm64", arch: 0xc00000b7, socketpair: 199, read: 63, blocked: [198, 203, 200, 201, 202, 206, 207, 210, 211, 212, 242, 243, 269, 425, 426] },
-  ])("allows only local socketpairs while retaining network denials on $name", ({ name, arch, socketpair, read, blocked }) => {
+    { name: "x64", arch: 0xc000003e, socketpair: 53, shutdown: 48, read: 0, blocked: [41, 42, 43, 44, 45, 46, 47, 49, 50, 288, 299, 307, 425, 426] },
+    { name: "arm64", arch: 0xc00000b7, socketpair: 199, shutdown: 210, read: 63, blocked: [198, 203, 200, 201, 202, 206, 207, 211, 212, 242, 243, 269, 425, 426] },
+  ])("allows local socketpairs and shutdown for pipe EOF while retaining network denials on $name", ({ name, arch, socketpair, shutdown, read, blocked }) => {
     const filter = networkDenyFilter(name);
     expect(evaluateFilter(filter, arch, socketpair, 1)).toBe(0x7fff0000); // AF_UNIX
+    expect(evaluateFilter(filter, arch, shutdown)).toBe(0x7fff0000);
     for (const family of [0, 2, 10, 30]) expect(evaluateFilter(filter, arch, socketpair, family)).toBe(0x00050001);
     for (const syscall of blocked) expect(evaluateFilter(filter, arch, syscall, 1)).toBe(0x00050001);
     expect(evaluateFilter(filter, arch, read)).toBe(0x7fff0000);

@@ -37,9 +37,13 @@ export function buildLinuxInvocation(command: SandboxCommand, policy: Required<i
 export function networkDenyFilter(architecture: string = process.arch): Buffer {
   const arch = architecture === "arm64" ? 0xc00000b7 : 0xc000003e;
   if (architecture !== "x64" && architecture !== "arm64") throw new Error(`Linux network isolation is unsupported on ${architecture}.`);
+  // Do not deny shutdown (x64: 48, arm64: 210): after writing spawnSync input,
+  // libuv uses shutdown(SHUT_WR) on its local socketpair to deliver stdin EOF.
+  // shutdown cannot open a connection or send new application data; socket,
+  // connect and send syscalls remain denied below.
   const calls = architecture === "arm64"
-    ? [198, 203, 200, 201, 202, 206, 207, 210, 211, 212, 242, 243, 269, 425, 426]
-    : [41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 288, 299, 307, 425, 426];
+    ? [198, 203, 200, 201, 202, 206, 207, 211, 212, 242, 243, 269, 425, 426]
+    : [41, 42, 43, 44, 45, 46, 47, 49, 50, 288, 299, 307, 425, 426];
   const ins: Array<[number, number, number, number]> = [[0x20, 0, 0, 4], [0x15, 1, 0, arch], [0x06, 0, 0, 0x80000000], [0x20, 0, 0, 0]];
   // libuv uses AF_UNIX socketpairs for default child-process pipes. Permit only
   // that local IPC domain (args[0] at seccomp_data offset 16), not other families.

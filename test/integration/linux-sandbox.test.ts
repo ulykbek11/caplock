@@ -41,6 +41,8 @@ suite("Linux production sandbox contract", () => {
         assert.equal(process.env.NODE_NO_WARNINGS, '1');
       `;
       const childScript = environmentChecks + `
+        // This read must receive EOF, not merely the input bytes. libuv needs
+        // shutdown(SHUT_WR) on the parent's socketpair after its write drains.
         assert.equal(require('node:fs').readFileSync(0, 'utf8'), 'pipe-input');
         console.log('child-started'); console.error('child-stderr');
       `;
