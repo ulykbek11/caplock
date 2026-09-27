@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { appendFileSync } from "node:fs";
+import { appendFileSync, existsSync, statSync } from "node:fs";
 import path from "node:path";
 import { readLockfile, findLock } from "./lockfile.js";
 import { readConfig } from "./config.js";
@@ -19,6 +19,22 @@ function directNodeEval(command: string): string | undefined {
   const match = /^node(?:\.exe)?\s+-e\s+("(?:[^"\\]|\\.)*")\s*$/is.exec(command);
   if (!match) return undefined;
   try { return JSON.parse(match[1]!); } catch { return undefined; }
+}
+
+/** Parse only the argv form npm uses for `node script.js [args...]`. Commands
+ * needing shell syntax retain the shell path. */
+function directNodeScript(command: string, packageDir: string): string[] | undefined {
+  const match = /^node(?:\.exe)?\s+([A-Za-z0-9._\\/-]+)(?:\s+([A-Za-z0-9._\\/:=@,+-]+(?:\s+[A-Za-z0-9._\\/:=@,+-]+)*))?\s*$/i.exec(command);
+  if (!match) return undefined;
+  const script = match[1]!;
+  const tokens = [script, ...(match[2]?.split(/\s+/u) ?? [])];
+  if (script.startsWith("-")) return undefined;
+  try {
+    const resolved = path.resolve(packageDir, script);
+    const relative = path.relative(packageDir, resolved);
+    if (relative.startsWith("..") || path.isAbsolute(relative) || !existsSync(resolved) || !statSync(resolved).isFile()) return undefined;
+  } catch { return undefined; }
+  return tokens;
 }
 
 async function main(): Promise<void> {
@@ -69,9 +85,12 @@ async function main(): Promise<void> {
     ? lifecycle.command.replace(/^node(?:\.exe)?(?=\s|$)/i, `"${nodeExecutable}"`)
     : lifecycle.command.replace(/^node(?:\.exe)?(?=\s|$)/i, quoteShell(nodeExecutable));
   const nodeEval = process.platform === "win32" ? directNodeEval(lifecycle.command) : undefined;
-  const sandboxCommand = nodeEval === undefined
-    ? { executable: shell, args: process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command], trustedExecutablePaths: /^node(?:\.exe)?(?=\s|$)/i.test(lifecycle.command) ? [nodeExecutable] : undefined }
-    : { executable: nodeExecutable, args: ["-e", nodeEval], trustedExecutablePaths: [nodeExecutable] };
+  const nodeScript = process.platform === "win32" && nodeEval === undefined ? directNodeScript(lifecycle.command, identity.packageDir) : undefined;
+  const sandboxCommand = nodeEval !== undefined
+    ? { executable: nodeExecutable, args: ["-e", nodeEval], trustedExecutablePaths: [nodeExecutable] }
+    : nodeScript !== undefined
+    ? { executable: nodeExecutable, args: ["--preserve-symlinks-main", ...nodeScript], cwd: identity.packageDir, trustedExecutablePaths: [nodeExecutable] }
+    : { executable: shell, args: process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command], trustedExecutablePaths: /^node(?:\.exe)?(?=\s|$)/i.test(lifecycle.command) ? [nodeExecutable] : undefined };
   // The lockfile is user-editable input. Validate it in the trusted parent on
   // every invocation, before any lifecycle command reaches a backend.
   const policy = validatePolicy(approved.policy, root, identity.packageDir);

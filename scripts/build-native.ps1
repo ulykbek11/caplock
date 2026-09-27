@@ -4,6 +4,8 @@ $outputDir = Join-Path $PSScriptRoot '..\native\bin'
 $output = Join-Path $outputDir 'caplock-sandbox.exe'
 $shellSource = Join-Path $PSScriptRoot '..\native\windows\caplock-shell.c'
 $shellOutput = Join-Path $outputDir 'caplock-shell.exe'
+$pipeShimSource = Join-Path $PSScriptRoot '..\native\windows\caplock-pipe-shim.c'
+$pipeShimOutput = Join-Path $outputDir 'caplock-pipe-shim.node'
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
 # npm can be launched from a regular PowerShell, an x86 developer prompt, or
@@ -30,6 +32,9 @@ if (-not $compiler) { throw 'The MSVC x64 compiler was not available after loadi
 if ($LASTEXITCODE -ne 0) { throw 'Native helper compilation failed.' }
 & $compiler.Source /nologo /W4 /WX /DUNICODE /D_UNICODE /Fe:$shellOutput $shellSource
 if ($LASTEXITCODE -ne 0) { throw 'Native shell launcher compilation failed.' }
+& $compiler.Source /nologo /W4 /WX /LD /DUNICODE /D_UNICODE /Fo:"$outputDir\caplock-pipe-shim.obj" /Fe:$pipeShimOutput $pipeShimSource advapi32.lib
+if ($LASTEXITCODE -ne 0) { throw 'Native pipe shim compilation failed.' }
+Remove-Item -Force -ErrorAction SilentlyContinue "$outputDir\caplock-pipe-shim.obj", "$outputDir\caplock-pipe-shim.exp", "$outputDir\caplock-pipe-shim.lib"
 
 # Check the PE machine field instead of trusting the architecture of the shell.
 $bytes = [IO.File]::ReadAllBytes($output)
@@ -38,3 +43,4 @@ $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
 if ($machine -ne 0x8664) { throw "Native helper was not built for x64 (PE machine 0x$('{0:X4}' -f $machine))." }
 Write-Output "Built $output"
 Write-Output "Built $shellOutput"
+Write-Output "Built $pipeShimOutput"

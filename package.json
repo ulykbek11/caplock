@@ -37,6 +37,8 @@
     "dist/",
     "native/bin/caplock-sandbox.exe",
     "native/bin/caplock-shell.exe",
+    "native/windows/caplock-pipe-preload.cjs",
+    "native/bin/caplock-pipe-shim.node",
     "README.md",
     "LICENSE",
     "SECURITY.md",

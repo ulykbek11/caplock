@@ -38,6 +38,20 @@ suite("Windows AppContainer production helper", () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 45_000);
 
+  it("keeps a nested Node child contained and bounded", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "caplock-windows-nested-"));
+    const packageDir = path.join(root, "node_modules", "fixture");
+    try {
+      mkdirSync(packageDir, { recursive: true });
+      writeFileSync(path.join(packageDir, "package.json"), '{"name":"fixture","version":"1.0.0"}');
+      writeFileSync(path.join(packageDir, "nested.js"), "const fs=require('node:fs'),cp=require('node:child_process'),path=require('node:path');const child=cp.spawnSync(process.execPath,['-e',\"const fs=require('node:fs'),path=require('node:path');try{fs.writeFileSync(path.resolve(process.cwd(),'..','..','nested-escape'),'x');process.exit(9)}catch(e){process.exit(e&&(e.code==='EPERM'||e.code==='EACCES')?0:8)}\"],{timeout:3000});fs.writeFileSync('nested-result.json',JSON.stringify({started:typeof child.pid==='number',status:child.status,error:child.error?.code,parentContinued:true,escaped:fs.existsSync(path.join(process.cwd(),'..','..','nested-escape'))}));process.exit(child.status===0?0:2);");
+      const result = await new WindowsSandboxBackend().run({ executable: process.execPath, args: ["--preserve-symlinks-main", "nested.js"], cwd: packageDir, trustedExecutablePaths: [process.execPath] }, defaultPolicy(), { projectRoot: root, identity: { name: "fixture", version: "1.0.0", packageDir, packageJsonPath: path.join(packageDir, "package.json") }, controlEnv: process.env, childEnv: process.env, timeoutMs: 12_000 });
+      expect(result.code, `outer watchdog or nested child failure: ${result.stderr}`).toBe(0);
+      expect(JSON.parse(readFileSync(path.join(packageDir, "nested-result.json"), "utf8"))).toMatchObject({ started: true, status: 0, parentContinued: true, escaped: false });
+      expect(existsSync(path.join(root, "nested-escape"))).toBe(false);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 20_000);
+
   it("actively denies network:none and permits the same configured-resolver DNS request under network:host", async () => {
     const result = await runWindowsNetworkContract();
     expect(result.defaultDeny, result.detail).toBe(true);

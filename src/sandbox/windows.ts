@@ -11,6 +11,25 @@ import type { DoctorCheck, Policy, SandboxAvailability, SandboxBackend, SandboxC
 
 const capabilities: SandboxCapabilities = { filesystemIsolation: true, environmentIsolation: true, networkIsolation: true, processContainment: true, processObservation: false };
 function helperPath(): string { return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../native/bin/caplock-sandbox.exe"); }
+function pipeShimPath(): string { return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../native/bin/caplock-pipe-shim.node"); }
+function pipePreloadPath(): string { return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../native/windows/caplock-pipe-preload.cjs"); }
+
+function isNodeExecutable(value: string): boolean { return /^node(?:\.exe)?$/i.test(path.basename(value)); }
+function trustedNodeOptions(preloadPath: string, shimPath: string): string {
+  // NODE_OPTIONS has its own quoting grammar (independent of CreateProcess's
+  // command-line quoting). Quote the preload path so a temp/runtime directory
+  // containing spaces remains one --require argument.
+  // Node's NODE_OPTIONS tokenizer treats backslashes as escapes even inside
+  // quotes. Forward slashes preserve Windows drive paths without losing path
+  // separators during option parsing.
+  const nodeOptionPath = (value: string): string => {
+    const nodePath = value.replaceAll("\\", "/");
+    return /\s/.test(nodePath) ? `"${nodePath.replaceAll('"', '\\"')}"` : nodePath;
+  };
+  // Load the CJS bootstrap first. It requires the native addon normally and
+  // records a path-free loader error before rethrowing.
+  return `--preserve-symlinks --require=${nodeOptionPath(preloadPath)} --require=${nodeOptionPath(shimPath)}`;
+}
 
 /** CreateProcessW requires one NUL after every entry and one extra final NUL. */
 export function serializeWindowsEnvironment(env: Record<string, string>): Buffer {
@@ -163,6 +182,9 @@ export class WindowsSandboxBackend implements SandboxBackend {
     const home = path.join(childTemp, "home"); mkdirSync(home, { recursive: true, mode: 0o700 });
     const controlEnv = context.controlEnv ?? process.env;
     const env = buildWindowsChildEnvironment(controlEnv, context.childEnv ?? controlEnv, policy, home);
+    // NODE_OPTIONS is parsed before lifecycle code. It is neither CapLock
+    // runtime state nor safe ambient input for a sandboxed Node descendant.
+    delete env.NODE_OPTIONS;
     if (process.env.CAPLOCK_DEBUG === "1") {
       const required = ["SystemRoot", "WINDIR", "ComSpec", "PATH", "PATHEXT", "TEMP", "TMP", "USERPROFILE", "HOME", "HOMEDRIVE", "HOMEPATH", "LOCALAPPDATA", "APPDATA"];
       console.error(`CapLock child environment: entries=${Object.keys(env).length}; ${required.map((key) => `${key}=${env[key] ? "present" : "absent"}`).join("; ")}`);
@@ -188,13 +210,59 @@ export class WindowsSandboxBackend implements SandboxBackend {
       copyFileSync(trustedSource, destination, 0);
       return { requested: source, source: trustedSource, destination: realpathOrResolve(destination), runtimeDirectory: runtimeRoot, index };
     });
+    // libuv before 1.53 uses global named pipes for default child stdio.  The
+    // trusted preload changes only libuv's private pipe namespace while the
+    // process token is an AppContainer; it is inherited by nested Node
+    // processes so their default pipes retain normal capture semantics.
+    let pipeShimStaged = false;
+    let stagedPipeShim: string | undefined;
+    let stagedPipePreload: string | undefined;
+    if (isNodeExecutable(command.executable)) {
+      const sourceShim = pipeShimPath();
+      const sourcePreload = pipePreloadPath();
+      if (!existsSync(sourceShim)) throw new Error("Native Windows pipe compatibility shim is missing. Run npm run native:build.");
+      if (!existsSync(sourcePreload)) throw new Error("Native Windows pipe compatibility preload is missing.");
+      const shim = path.join(runtimeRoot, "caplock-pipe-shim.node");
+      const preload = path.join(runtimeRoot, "caplock-pipe-preload.cjs");
+      copyFileSync(sourceShim, shim, 0);
+      copyFileSync(sourcePreload, preload, 0);
+      if (!existsSync(shim) || !existsSync(preload)) throw new Error("Native Windows pipe compatibility preload was not staged.");
+      stagedPipeShim = shim;
+      stagedPipePreload = preload;
+      pipeShimStaged = true;
+      // This replaces, rather than merges with, any host or user NODE_OPTIONS.
+      // The trusted preload then follows normal Node environment inheritance
+      // for nested Node children.
+      env.CAPLOCK_PIPE_SHIM_PATH = shim;
+      // The native helper checked the exact suspended child token before it
+      // resumed Node. This avoids relying solely on Node's addon-time token
+      // query, which can report a restricted token on the lifecycle path.
+      env.CAPLOCK_PIPE_SHIM_FORCE = "1";
+      env.NODE_OPTIONS = trustedNodeOptions(preload, shim);
+      // This is intentionally not secret-bearing and lets the fixture prove
+      // that the native module registration and hook installation ran.
+      if (controlEnv.CAPLOCK_DEBUG) env.CAPLOCK_PIPE_SHIM_DIAGNOSTIC = "1";
+    }
+    const pipeShimExists = stagedPipeShim !== undefined && existsSync(stagedPipeShim);
+    if (process.env.CAPLOCK_DEBUG === "1") console.error(`CapLock Windows pipe shim: pipeShimStaged=${pipeShimStaged}; pipeShimExists=${pipeShimExists}; trustedNodeOptionsConfigured=${Boolean(env.NODE_OPTIONS)}; shim=${stagedPipeShim ? path.basename(stagedPipeShim) : "<not-applicable>"}; stagedPath=<redacted>`);
     if (process.env.CAPLOCK_DEBUG === "1") for (const item of stagedExecutables) console.error(`CapLock staged executable: source=${item.source}; destination=${item.destination}`);
     for (const target of writes) mkdirSync(target, { recursive: true, mode: 0o700 });
     const envFile = path.join(childTemp, "child-environment.utf16");
     writeFileSync(envFile, serializeWindowsEnvironment(env), { mode: 0o600 });
     const stagedArgs = command.args.map((arg) => stagedExecutables.reduce((value, item) => value.replaceAll(item.requested, item.destination).replaceAll(item.source, item.destination), arg));
     const stagedCommandExecutable = stagedExecutables.find((item) => item.requested === command.executable || item.source === command.executable)?.destination ?? command.executable;
-    const args = ["--package", packageDir, "--temp", childTemp, "--cwd", cwd, "--network", policy.network, "--env-file", envFile, ...reads.flatMap((item) => ["--read", item]), ...stagedExecutables.flatMap((item) => ["--read", item.runtimeDirectory, "--read", item.destination]), ...writes.flatMap((item) => ["--write", item]), "--", stagedCommandExecutable, ...stagedArgs];
-    try { return await run(helperPath(), args, { env: controlEnv, timeoutMs: context.timeoutMs }); } finally { rmSync(sandboxRoot, { recursive: true, force: true }); }
+    // The helper applies ACLs after staging. Directory inheritance does not
+    // retroactively grant existing files, so the preload and native addon
+    // require their own explicit read/execute grants just like node.exe.
+    const trustedRuntimeAssets = [stagedPipeShim, stagedPipePreload].filter((item): item is string => item !== undefined);
+    const args = ["--package", packageDir, "--temp", childTemp, "--cwd", cwd, "--network", policy.network, "--env-file", envFile, ...reads.flatMap((item) => ["--read", item]), ...stagedExecutables.flatMap((item) => ["--read", item.runtimeDirectory, "--read", item.destination]), ...trustedRuntimeAssets.flatMap((item) => ["--read", item]), ...writes.flatMap((item) => ["--write", item]), "--", stagedCommandExecutable, ...stagedArgs];
+    try {
+      const result = await run(helperPath(), args, { env: controlEnv, timeoutMs: context.timeoutMs });
+      if (process.env.CAPLOCK_DEBUG === "1" && stagedPipeShim) {
+        const loadedMarker = path.join(packageDir, "caplock-pipe-shim-entered.marker");
+        console.error(`CapLock Windows pipe shim: pipeShimParentLoaded=${existsSync(loadedMarker)}; shim=${path.basename(stagedPipeShim)}; stagedPath=<redacted>`);
+      }
+      return result;
+    } finally { rmSync(sandboxRoot, { recursive: true, force: true }); }
   }
 }
