@@ -412,7 +412,7 @@ int wmain(int argc, wchar_t **argv) {
   LPPROC_THREAD_ATTRIBUTE_LIST attributes = NULL;
   HANDLE inherited_stdio[3] = { NULL, NULL, NULL };
   STARTUPINFOEXW startup;
-  PROCESS_INFORMATION child;
+  PROCESS_INFORMATION child = { 0 };
   LPWCH child_environment = NULL;
   BOOL child_environment_inherited = FALSE;
   HANDLE job = NULL;
@@ -504,9 +504,9 @@ int wmain(int argc, wchar_t **argv) {
       child_environment, cwd, &startup.StartupInfo, &child)) { print_last_error(L"CreateProcessW AppContainer"); goto cleanup; }
   if (child_environment_inherited) FreeEnvironmentStringsW(child_environment); else VirtualFree(child_environment, 0, MEM_RELEASE); child_environment = NULL;
   if (selftest_running) selftest_status.processLaunched = TRUE;
-  if (!child_is_appcontainer(child.hProcess)) { fwprintf(stderr, L"caplock-sandbox: child is not an AppContainer\n"); TerminateProcess(child.hProcess, 1); CloseHandle(child.hThread); CloseHandle(child.hProcess); goto cleanup; }
+  if (!child_is_appcontainer(child.hProcess)) { fwprintf(stderr, L"caplock-sandbox: child is not an AppContainer\n"); TerminateProcess(child.hProcess, 1); goto cleanup; }
   if (selftest_running) selftest_status.tokenIsAppContainer = TRUE;
-  if (!AssignProcessToJobObject(job, child.hProcess)) { print_last_error(L"AssignProcessToJobObject"); TerminateProcess(child.hProcess, 1); CloseHandle(child.hThread); CloseHandle(child.hProcess); goto cleanup; }
+  if (!AssignProcessToJobObject(job, child.hProcess)) { print_last_error(L"AssignProcessToJobObject"); TerminateProcess(child.hProcess, 1); goto cleanup; }
   if (ResumeThread(child.hThread) == (DWORD)-1) { print_last_error(L"ResumeThread"); goto cleanup; }
   { DWORD wait, elapsed = 0; BOOL nested_observed = FALSE, nested_exited = FALSE;
     do {
@@ -523,11 +523,30 @@ int wmain(int argc, wchar_t **argv) {
   GetExitCodeProcess(child.hProcess, &exit_code);
   if (selftest_running) selftest_status.childExitCode = exit_code;
   if (selftest_running) { JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting; selftest_status.parentExited = TRUE; if (QueryInformationJobObject(job, JobObjectBasicAccountingInformation, &accounting, sizeof(accounting), NULL) && accounting.ActiveProcesses == 0) selftest_status.jobClean = TRUE; }
-  CloseHandle(child.hThread); CloseHandle(child.hProcess); success = TRUE;
+  success = TRUE;
 
 cleanup:
   if (child_environment != NULL) { if (child_environment_inherited) FreeEnvironmentStringsW(child_environment); else VirtualFree(child_environment, 0, MEM_RELEASE); }
-  if (job != NULL) CloseHandle(job);
+  /* Closing a kill-on-close Job requests termination asynchronously. Drain it
+     before restoring ACLs/returning, so JS cleanup cannot race live descendants
+     holding staged executables or a cwd inside the owned temporary tree. */
+  if (job != NULL) {
+    JOBOBJECT_BASIC_ACCOUNTING_INFORMATION accounting;
+    ULONGLONG deadline = GetTickCount64() + 3000;
+    if (!TerminateJobObject(job, 1)) { print_last_error(L"TerminateJobObject cleanup"); success = FALSE; }
+    for (;;) {
+      if (!QueryInformationJobObject(job, JobObjectBasicAccountingInformation, &accounting, sizeof(accounting), NULL)) { print_last_error(L"QueryInformationJobObject cleanup"); success = FALSE; break; }
+      if (accounting.ActiveProcesses == 0) { if (selftest_running) selftest_status.jobClean = TRUE; break; }
+      if (GetTickCount64() >= deadline) { SetLastError(ERROR_TIMEOUT); print_last_error(L"Job cleanup drain"); success = FALSE; break; }
+      Sleep(10);
+    }
+    CloseHandle(job);
+  }
+  if (child.hProcess != NULL) {
+    if (WaitForSingleObject(child.hProcess, 3000) != WAIT_OBJECT_0) { SetLastError(ERROR_TIMEOUT); print_last_error(L"Child cleanup wait"); success = FALSE; }
+    CloseHandle(child.hProcess);
+  }
+  if (child.hThread != NULL) CloseHandle(child.hThread);
   if (command_line != NULL) HeapFree(GetProcessHeap(), 0, command_line);
   if (attributes != NULL) { DeleteProcThreadAttributeList(attributes); HeapFree(GetProcessHeap(), 0, attributes); }
   for (index = 0; index < 3; index++) if (inherited_stdio[index] != NULL) CloseHandle(inherited_stdio[index]);

@@ -10,6 +10,12 @@ import { redactText } from "../util.js";
 import type { DoctorCheck, Policy, SandboxAvailability, SandboxBackend, SandboxCapabilities, SandboxCommand, SandboxContext, SandboxResult } from "../types.js";
 
 const capabilities: SandboxCapabilities = { filesystemIsolation: true, environmentIsolation: true, networkIsolation: true, processContainment: true, processObservation: false };
+export function removeWindowsTempDirectory(directory: string): void {
+  // Owned temporary trees only. Windows may briefly retain image/filesystem
+  // references after process exit. Node retries transient EPERM/EBUSY/ENOTEMPTY
+  // with bounded linear backoff, and still throws on permanent failure.
+  rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+}
 function helperPath(): string { return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../native/bin/caplock-sandbox.exe"); }
 function pipeShimPath(): string { return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../native/bin/caplock-pipe-shim.node"); }
 function pipePreloadPath(): string { return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../native/windows/caplock-pipe-preload.cjs"); }
@@ -91,7 +97,7 @@ export async function runWindowsNetworkContract(backend = new WindowsSandboxBack
       if (hostAllow) return { defaultDeny, hostAllow, detail: lastDetail };
     }
     return { defaultDeny: false, hostAllow: false, detail: lastDetail };
-  } finally { rmSync(root, { recursive: true, force: true }); }
+  } finally { removeWindowsTempDirectory(root); }
 }
 
 async function defaultIPv4Gateway(): Promise<string | undefined> {
@@ -170,7 +176,7 @@ export class WindowsSandboxBackend implements SandboxBackend {
         { name: "network.host-allow", ok: network.hostAllow, detail: network.detail },
       );
     } catch (error) { checks.push({ name: "Windows filesystem/environment contract", ok: false, detail: error instanceof Error ? error.message : "probe failed" }); }
-    finally { rmSync(root, { recursive: true, force: true }); }
+    finally { removeWindowsTempDirectory(root); }
     return checks;
   }
   async run(command: SandboxCommand, policy: Required<import("../types.js").Policy>, context: SandboxContext): Promise<SandboxResult> {
@@ -263,6 +269,8 @@ export class WindowsSandboxBackend implements SandboxBackend {
         console.error(`CapLock Windows pipe shim: pipeShimParentLoaded=${existsSync(loadedMarker)}; shim=${path.basename(stagedPipeShim)}; stagedPath=<redacted>`);
       }
       return result;
-    } finally { rmSync(sandboxRoot, { recursive: true, force: true }); }
+    // run() resolves on the helper's close event, after process exit and stdio
+    // closure. The helper drains its Job before returning (including children).
+    } finally { removeWindowsTempDirectory(sandboxRoot); }
   }
 }

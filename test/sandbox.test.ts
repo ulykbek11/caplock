@@ -2,6 +2,19 @@ import { describe, expect, it } from "vitest";
 import { buildLinuxInvocation, networkDenyFilter } from "../src/sandbox/linux.js";
 import { defaultPolicy } from "../src/policy.js";
 describe("production Bubblewrap arguments", () => {
+  it("seals an empty project mount after overlaying the writable package", () => {
+    const projectRoot = "/tmp/project";
+    const packageDir = "/tmp/project/node_modules/pkg";
+    const { args } = buildLinuxInvocation({ executable: "/bin/sh", args: [] }, defaultPolicy(), { projectRoot, identity: { name: "pkg", version: "1", packageDir, packageJsonPath: "x" } });
+    const projectMount = args.findIndex((arg, i) => arg === "--tmpfs" && args[i + 1] === projectRoot);
+    const packageMount = args.findIndex((arg, i) => arg === "--bind" && args[i + 1] === packageDir);
+    const seal = args.indexOf("--remount-ro");
+    expect(projectMount).toBeGreaterThan(0);
+    expect(packageMount).toBeGreaterThan(projectMount);
+    expect(seal).toBeGreaterThan(packageMount);
+    expect(args[seal + 1]).toBe(projectRoot);
+    expect(args.some((arg, i) => ["--bind", "--ro-bind"].includes(arg) && args[i + 1] === projectRoot)).toBe(false);
+  });
   it.each(["none", "host"] as const)("clears inherited environment before setting filtered values for network:%s", (network) => {
     const identity = { name: "pkg", version: "1", packageDir: "/project/node_modules/pkg", packageJsonPath: "x" };
     const policy = { ...defaultPolicy(), network };

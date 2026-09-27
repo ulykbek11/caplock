@@ -19,6 +19,8 @@ suite("Linux production sandbox contract", () => {
       const pkg = path.join(root, "node_modules", "fixture"); const sibling = path.join(root, "sibling");
       mkdirSync(pkg, { recursive: true }); mkdirSync(sibling); writeFileSync(path.join(root, ".env"), "TOP_SECRET");
       writeFileSync(path.join(pkg, "package.json"), '{"name":"fixture","version":"1.0.0"}');
+      writeFileSync(path.join(root, "package.json"), '{"name":"project","version":"1.0.0"}');
+      writeFileSync(path.join(sibling, "approved.txt"), "approved-read");
       const backend = new LinuxBubblewrapBackend(); const available = await backend.checkAvailability();
       expect(available.available, available.detail).toBe(true);
       const policy = defaultPolicy();
@@ -31,6 +33,21 @@ suite("Linux production sandbox contract", () => {
       const context = { projectRoot: root, identity: { name: "fixture", version: "1.0.0", packageDir: pkg, packageJsonPath: path.join(pkg, "package.json") }, childEnv: { ...process.env, npm_lifecycle_event: "postinstall", NODE_NO_WARNINGS: "1" }, timeoutMs: 10_000 };
       const environmentChecks = `
         const assert = require('node:assert/strict');
+        const fs = require('node:fs');
+        const root = ${JSON.stringify(root)};
+        const path = require('node:path');
+        const denied = action => assert.throws(action, error => ['EPERM','EACCES','ENOENT','EROFS'].includes(error.code));
+        denied(() => fs.readFileSync(path.join(root, '.env')));
+        // Check in-sandbox results, not only the host filesystem: an escape
+        // into a writable synthetic /tmp tree leaves no host-side evidence.
+        denied(() => fs.writeFileSync(path.join(root, 'escape-' + process.pid), 'escape'));
+        denied(() => fs.mkdirSync(path.join(root, 'new-sibling-' + process.pid)));
+        denied(() => fs.writeFileSync(path.join(root, 'sibling', 'escape-' + process.pid), 'escape'));
+        assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).name, 'project');
+        assert.equal(fs.readFileSync(path.join(root, 'sibling', 'approved.txt'), 'utf8'), 'approved-read');
+        denied(() => fs.writeFileSync(path.join(root, 'sibling', 'approved.txt'), 'overwrite'));
+        fs.writeFileSync(path.join(root, 'approved-output', 'allowed-' + process.pid), 'ok');
+        fs.writeFileSync('package-write-' + process.pid, 'ok');
         assert.equal(process.env.CAPLOCK_TEST_SECRET, undefined);
         assert.equal(process.env.CAPLOCK_UNLISTED_VALUE, undefined);
         assert.equal(process.env.HOME, '/home/caplock');
@@ -55,7 +72,7 @@ suite("Linux production sandbox contract", () => {
         console.log('parent-continued');
       `;
       for (const network of ["none", "host"] as const) {
-        const nested = await backend.run({ executable: process.execPath, args: ["-e", parentScript], trustedExecutablePaths: [process.execPath] }, { ...policy, network }, context);
+        const nested = await backend.run({ executable: process.execPath, args: ["-e", parentScript], trustedExecutablePaths: [process.execPath] }, { ...policy, network, filesystem: { read: ["$PROJECT/sibling/approved.txt"], write: ["$PROJECT/approved-output"] } }, context);
         expect(nested.code, nested.stderr).toBe(0);
         expect(nested.stdout.trim()).toBe("parent-continued");
       }

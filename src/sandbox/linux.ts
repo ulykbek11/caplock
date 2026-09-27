@@ -14,6 +14,11 @@ const capabilities: SandboxCapabilities = { filesystemIsolation: true, environme
 export function buildLinuxArgs(command: SandboxCommand, policy: Required<import("../types.js").Policy>, context: SandboxContext): string[] {
   const args = ["--die-with-parent", "--new-session", "--unshare-pid", "--unshare-ipc", "--unshare-uts", "--unshare-user", "--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--dir", "/home", "--dir", "/home/caplock"];
   for (const item of systemPaths) if (existsSync(item)) args.push("--ro-bind", item, item);
+  // A project below writable /tmp needs its own mount: otherwise missing
+  // project files can be created in the synthetic tmpfs. Populate an empty
+  // project view (never bind the host root and expose .env/source), then seal
+  // only this mount after installing the approved submounts below.
+  args.push("--tmpfs", context.projectRoot);
   for (const item of ["package.json", "package-lock.json", "pnpm-lock.yaml", "node_modules"]) { const source = path.join(context.projectRoot, item); if (existsSync(source)) args.push("--ro-bind", source, source); }
   args.push("--bind", context.identity.packageDir, context.identity.packageDir);
   for (const item of policy.filesystem?.read ?? []) { const source = substitutePolicyPath(item, context.projectRoot, context.identity.packageDir, { home: "/home/caplock", tmp: "/tmp" }); if (existsSync(source)) args.push("--ro-bind", source, source); }
@@ -23,6 +28,8 @@ export function buildLinuxArgs(command: SandboxCommand, policy: Required<import(
   for (const [key, value] of Object.entries(filterEnvironment(context.childEnv ?? context.controlEnv ?? process.env, policy.env?.allow ?? []))) args.push("--setenv", key, value);
   if (policy.network === "none") args.push("--seccomp", "3");
   for (const executable of command.trustedExecutablePaths ?? []) if (existsSync(executable)) args.push("--ro-bind", executable, executable);
+  // Non-recursive: packageDir and explicit write-grant mounts stay writable.
+  args.push("--remount-ro", context.projectRoot);
   args.push("--chdir", command.cwd ?? context.identity.packageDir, "--", command.executable, ...command.args);
   return args;
 }

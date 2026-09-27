@@ -57,4 +57,22 @@ suite("Windows AppContainer production helper", () => {
     expect(result.defaultDeny, result.detail).toBe(true);
     expect(result.hostAllow, result.detail).toBe(true);
   }, 45_000);
+
+  it("drains a surviving descendant before removing its staged runtime and open temp file", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "caplock-windows-cleanup-"));
+    const packageDir = path.join(root, "node_modules", "fixture");
+    const sandboxRoot = path.join(root, "owned-run");
+    try {
+      mkdirSync(packageDir, { recursive: true });
+      writeFileSync(path.join(packageDir, "package.json"), '{"name":"fixture","version":"1.0.0"}');
+      const child = "const fs=require('node:fs'),path=require('node:path');fs.openSync(path.join(process.env.TEMP,'held-open'),'w');fs.writeFileSync('child-ready',String(process.pid));setInterval(()=>{},1000)";
+      const parent = `const fs=require('node:fs');require('node:child_process').spawn(process.execPath,['-e',${JSON.stringify(child)}]);setInterval(()=>{if(fs.existsSync('child-ready'))process.exit(0)},10)`;
+      const result = await new WindowsSandboxBackend().run({ executable: process.execPath, args: ["-e", parent], trustedExecutablePaths: [process.execPath] }, defaultPolicy(), { projectRoot: root, sandboxRoot, identity: { name: "fixture", version: "1.0.0", packageDir, packageJsonPath: path.join(packageDir, "package.json") }, controlEnv: process.env, childEnv: process.env, timeoutMs: 12_000 });
+      expect(result.code, result.stderr).toBe(0);
+      const childPid = Number(readFileSync(path.join(packageDir, "child-ready"), "utf8"));
+      expect(childPid).toBeGreaterThan(0);
+      expect(() => process.kill(childPid, 0)).toThrow();
+      expect(existsSync(sandboxRoot), "owned run tree must be removed before backend returns").toBe(false);
+    } finally { rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
+  }, 20_000);
 });
